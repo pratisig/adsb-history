@@ -433,7 +433,11 @@ export async function fetchSnapshot({
   if (!fetchImpl) throw new Error('Ce navigateur ne permet pas les requêtes réseau.');
   const candidates = urls || snapshotCandidates(zoneId, { repo, branch });
   const problems = [];
-  for (const url of candidates) {
+  for (const candidate of candidates) {
+    // paramètre anti-cache : raw.githubusercontent.com sert des copies pendant 5 min
+    const url = candidate.startsWith('http')
+      ? `${candidate}${candidate.includes('?') ? '&' : '?'}t=${Math.floor(Date.now() / 1000)}`
+      : candidate;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
