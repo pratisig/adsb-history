@@ -61,8 +61,9 @@ simulée reste disponible dans la liste des jeux de données).
 ### a) Le relevé automatique (source fiable)
 
 Un **workflow GitHub Actions** (`.github/workflows/live-snapshot.yml`) interroge les API ADS-B
-publiques depuis un runner — donc hors navigateur — pour les zones de
-`docs/data/live-zones.json` (Dakar, Saint-Louis, Ziguinchor, Paris, Montréal) :
+publiques depuis un runner — donc hors navigateur — pour **les zones déclarées dans
+`docs/data/live-zones.json`** (au départ Dakar, Saint-Louis, Ziguinchor, Paris, Montréal —
+la liste n'est qu'un exemple, voir « a bis) Zones » ci-dessous) :
 
 - une relève **toutes les 30 s**, fenêtre glissante de **3 heures**, cascade `adsb.lol` →
   `adsb.fi` → `OpenSky` ;
@@ -80,6 +81,36 @@ puis **Afficher sur la carte** (dernière position + traînée) ou **Explorer l'
 > *I have read and I understand my workflows, go ahead and enable them* (GitHub désactive les
 > tâches planifiées des forks par défaut). Sans cette autorisation, le relevé se met à jour à
 > chaque modification du dépôt et la page indique l'âge du dernier relevé.
+
+### a bis) Zones : n'importe où dans le monde
+
+Le relevé n'est **pas** limité au Sénégal : la liste des zones relevées est un simple fichier,
+`docs/data/live-zones.json`. Une zone = une ligne :
+
+```json
+{ "id": "casablanca", "label": "Casablanca", "lat": 33.57, "lon": -7.59, "radius": 100 }
+```
+
+- `id` : minuscules, chiffres et tirets (sert de nom de fichier publié) ;
+- `label` : ce que vous voyez dans la liste « Zone relevée » ;
+- `lat` / `lon` : centre de la zone, en degrés décimaux (le monde entier) ;
+- `radius` : rayon en **milles nautiques** (25 à 500 ; 100 NM ≈ 185 km).
+
+Enregistrez le fichier : c'est tout. Au passage suivant du workflow, la zone est relevée et
+apparaît dans le site. Le bouton **« Ajouter au relevé »** de la carte 5 fabrique la ligne à
+copier-coller pour vous (coordonnées choisies par saisie ou en cliquant sur la carte).
+
+Deux façons d'utiliser un point quelconque du globe :
+
+| Vous voulez… | Ce qu'il faut faire | Historique conservé ? |
+| --- | --- | --- |
+| Le trafic **actuel** autour d'un point (Lyon, Tokyo, Nairobi…) | carte 5 → coordonnées (ou « Choisir sur la carte ») → **Voir le trafic en direct** | Non (le temps de la page) — passe par un relais public |
+| Un **historique** sur une zone | l'ajouter à `live-zones.json` (une ligne) puis attendre un relevé | Oui, fenêtre glissante de 3 h |
+| Un **historique** mondial sur plusieurs jours | carte 2 → importer une archive ADS-B (monde entier) ou un CSV | Oui, tout ce que contient le fichier |
+
+Coût à connaître : chaque zone déclarée est interrogée **toutes les 30 secondes**. Cinq zones
+tiennent sans problème dans les quotas des API publiques ; en déclarer des dizaines demanderait
+d'espacer les relèves (`--poll-seconds` plus grand, ou plusieurs workflows).
 
 ### b) Le direct depuis le navigateur (facultatif)
 

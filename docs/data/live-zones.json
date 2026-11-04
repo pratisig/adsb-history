@@ -1,5 +1,5 @@
 {
-  "comment": "Zones relevées automatiquement par docs/tools/live-snapshot.mjs (workflow .github/workflows/live-snapshot.yml). Ajoutez une zone ici et le relevé s'en occupe au prochain passage.",
+  "comment": "Zones relevées automatiquement par docs/tools/live-snapshot.mjs (workflow .github/workflows/live-snapshot.yml). Chaque zone = une requête toutes les 30 s : ajoutez-en autant que nécessaire, n'importe où dans le monde. Le site lit ce fichier pour la liste des zones et propose un bouton « Ajouter au relevé » qui fabrique la ligne à coller ici.",
   "zones": [
     { "id": "dakar", "label": "Dakar", "lat": 14.74, "lon": -17.49, "radius": 150 },
     { "id": "saint-louis", "label": "Saint-Louis (Sénégal)", "lat": 16.03, "lon": -16.5, "radius": 100 },
