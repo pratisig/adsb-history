@@ -11,11 +11,15 @@ For more information and background, see [the associated presentation at WHY2025
 > ### 🛩️ Just want to explore flight history? Use **Turnstone Lite**
 >
 > [`docs/`](docs/README.md) (published by GitHub Pages) is a browser-only edition of this
-> project: **no PostgreSQL, no API server, no Firebase, no `npm install`**. Watch **live
-> traffic ingested straight from public ADS-B APIs** (adsb.lol, airplanes.live, adsb.fi,
-> OpenSky) and record it locally to build your own history, or drop a `globe_history` archive /
-> CSV on the page. Draw an area, filter by time / altitude / speed / callsign, inspect each
-> aircraft's track, export CSV — everything runs locally in the browser.
+> project: **no PostgreSQL, no API server, no Firebase, no `npm install`**. Real traffic is
+> ingested automatically by a GitHub Actions workflow ([`.github/workflows/live-snapshot.yml`](.github/workflows/live-snapshot.yml)):
+> it polls the public ADS-B APIs (adsb.lol, adsb.fi, OpenSky) every 30 s for the zones listed in
+> [`docs/data/live-zones.json`](docs/data/live-zones.json) and publishes the result on the `live`
+> branch, so the page can show **real aircraft, real trails and a real queryable history** with no
+> archive and no API key. (Those APIs send no CORS headers, so a browser cannot call them
+> directly — hence the workflow.) You can still drop a `globe_history` archive / CSV on the page.
+> Draw an area, filter by time / altitude / speed / callsign, inspect each aircraft's track,
+> export CSV — the query engine itself runs locally in the browser.
 >
 > ```bash
 > python3 -m http.server 8000 --directory docs   # then open http://localhost:8000

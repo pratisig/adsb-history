@@ -3,14 +3,31 @@
  * Exécution : node docs/test/run-tests.mjs
  */
 
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdtemp } from 'node:fs/promises';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { readTarStream, parseHeatmapBuffer, parseCsv } from '../assets/js/parse.js';
 import { datasetFromDemoJson, datasetFromRows, describeDataset, mergeDatasets } from '../assets/js/dataset.js';
 import { queryDataset, aggregateByAircraft, buildTimeline, resultsToCsv } from '../assets/js/query.js';
-import { normalizeAircraft, parseAcList, parseOpenSky, bboxAround, fetchLive } from '../assets/js/live.js';
+import {
+  normalizeAircraft,
+  parseAcList,
+  parseOpenSky,
+  bboxAround,
+  fetchLive,
+  parseSnapshot,
+  snapshotTraffic,
+  snapshotUrl,
+  snapshotCandidates,
+  extractJson,
+  relayUrl,
+  RELAYS,
+  fetchSnapshot,
+  fetchSnapshotIndex,
+} from '../assets/js/live.js';
+import { collect as collectSnapshot } from '../tools/live-snapshot.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 let failures = 0;
@@ -340,6 +357,103 @@ async function main() {
       message = err.message;
     }
     check('message explicite si toutes les sources échouent', /Aucune source en direct/i.test(message), message.slice(0, 80));
+  }
+
+
+  /* ---------------------------------------------------------------------- */
+  console.log('\nRelevé automatique (données réelles sans CORS)');
+  {
+    const raw = {
+      zone: { id: 'dakar', label: 'Dakar', lat: 14.74, lon: -17.49, radius: 150 },
+      updated: '2026-11-04T13:00:00.000Z',
+      provider: 'adsb.lol',
+      windowMinutes: 180,
+      fields: ['t', 'hex', 'flight', 'reg', 'type', 'category', 'military', 'lat', 'lon', 'alt', 'gs', 'track', 'squawk'],
+      samples: [
+        [1793796000, '07007c', '6VHAG', '6V-HAG', 'A139', 'A7', 0, 14.92, -17.58, 2850, 148.6, 216.8, '0733'],
+        [1793796030, '07007c', '6VHAG', '6V-HAG', 'A139', 'A7', 0, 14.93, -17.59, 2800, 150, 216.8, '0733'],
+        [1793796030, '0700dd', '6WHEM', '6W-HEM', 'B505', 'A7', 1, 14.82, -17.28, 1400, 87.5, 67.8, '0716'],
+      ],
+    };
+    const snap = parseSnapshot(raw);
+    check('parseSnapshot : échantillons lus', snap && snap.samples.length === 3);
+    check('parseSnapshot : colonnes mappées', snap.samples[0].hex === '07007c' && snap.samples[0].registration === '6V-HAG');
+    check('parseSnapshot : indicateur militaire', snap.samples[2].military === true);
+    check('parseSnapshot : tri chronologique', snap.samples[2].t === 1793796030 && snap.samples[1].t === 1793796030);
+    check('parseSnapshot : bornes du relevé', snap.first === 1793796000 && snap.last === 1793796030);
+    check('parseSnapshot : contenu invalide rejeté', parseSnapshot({ nope: true }) === null);
+
+    const traffic = snapshotTraffic(snap);
+    check('snapshotTraffic : dernière position par aéronef', traffic.points.length === 2);
+    check('snapshotTraffic : traînée du premier aéronef', traffic.trails.get('07007c').length === 2);
+    const limited = snapshotTraffic(snap, { windowMinutes: 0.25 });
+    check('snapshotTraffic : fenêtre appliquée', limited.points.length === 2 && limited.trails.get('07007c').length === 1);
+
+    check('extractJson : texte du relais r.jina.ai', extractJson('Title: \n\nMarkdown Content:\n{"ac":[{"hex":"abc"}]}\n') !== null);
+    check('extractJson : texte non JSON rejeté', extractJson('Rate limit exceeded') === null);
+    check(
+      'relayUrl : préfixe r.jina.ai',
+      relayUrl(RELAYS[1], 'https://api.adsb.lol/v2/point/1/2/3') === 'https://r.jina.ai/https://api.adsb.lol/v2/point/1/2/3'
+    );
+    check(
+      'relayUrl : appel direct inchangé',
+      relayUrl(RELAYS[0], 'https://api.adsb.lol/v2/point/1/2/3') === 'https://api.adsb.lol/v2/point/1/2/3'
+    );
+    check('snapshotUrl : URL du relevé publié', /raw\.githubusercontent\.com/.test(snapshotUrl('dakar')) && snapshotUrl('dakar').endsWith('/data/dakar.json'));
+    check('snapshotCandidates : miroir puis copie locale', snapshotCandidates('dakar').length === 3);
+
+    const relayed = await fetchLive({
+      lat: 14.74,
+      lon: -17.49,
+      radiusNm: 60,
+      relays: RELAYS,
+      fetchImpl: async (url) => {
+        if (url.startsWith('https://r.jina.ai/')) {
+          return { ok: true, text: async () => 'Markdown Content:\n{"ac":[{"hex":"abc123","lat":14.7,"lon":-17.4}]}\n' };
+        }
+        throw new TypeError('Failed to fetch');
+      },
+    });
+    check('relais CORS utilisé quand l’appel direct est bloqué', relayed.points.length === 1 && /relais/.test(relayed.provider), relayed.provider);
+    let blockingMessage = '';
+    try {
+      await fetchLive({ lat: 14.74, lon: -17.49, fetchImpl: async () => { throw new TypeError('blocked'); } });
+    } catch (err) {
+      blockingMessage = err.message;
+    }
+    check('erreurs détaillées : CORS nommé', /appel bloqué \(CORS\/DNS\)/.test(blockingMessage), blockingMessage.slice(0, 60));
+    check('erreurs détaillées : relevé automatique proposé', /relevé automatique/i.test(blockingMessage));
+
+    const urlsTried = [];
+    const snapshotFetch = async (url) => {
+      urlsTried.push(url);
+      if (url.includes('raw.githubusercontent.com')) return { ok: false, status: 404, json: async () => ({}) };
+      return { ok: true, json: async () => raw };
+    };
+    const fetched = await fetchSnapshot({ fetchImpl: snapshotFetch, timeoutMs: 1000 });
+    check('fetchSnapshot : bascule vers le miroir', fetched.samples.length === 3 && urlsTried.length === 2);
+    const index = await fetchSnapshotIndex({
+      fetchImpl: async () => ({ ok: true, json: async () => ({ zones: [{ id: 'dakar', label: 'Dakar' }] }) }),
+    });
+    check('fetchSnapshotIndex : zones listées', Array.isArray(index) && index[0].id === 'dakar');
+
+    /* Collecte côté serveur : écriture d'un relevé à partir d'une API simulée. */
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'turnstone-live-'));
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (url) => {
+      if (String(url).includes('raw.githubusercontent.com')) return { ok: false, status: 404, json: async () => ({}) };
+      return { ok: true, json: async () => ({ ac: [{ hex: 'abc123', flight: 'TEST1 ', lat: 14.7, lon: -17.4, alt_baro: 1200, gs: 100, track: 90 }] }) };
+    };
+    try {
+      await collectSnapshot({ out: dir, zonesFile: null, pollSeconds: 0, loopMinutes: 0 });
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    const written = JSON.parse(await readFile(path.join(dir, 'dakar.json'), 'utf8'));
+    const writtenIndex = JSON.parse(await readFile(path.join(dir, 'index.json'), 'utf8'));
+    check('collecte : fichier de zone écrit', written.rows === 1 && written.samples[0][1] === 'abc123');
+    check('collecte : index des zones écrit', writtenIndex.zones[0].id === 'dakar' && writtenIndex.zones[0].aircraft === 1);
+    check('collecte : relevé relisible par le site', parseSnapshot(written) !== null);
   }
 
   console.log(failures ? `\n${failures} test(s) en échec\n` : '\nTous les tests passent\n');

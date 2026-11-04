@@ -14,7 +14,7 @@ import {
 import { queryDataset, aggregateByAircraft, buildTimeline, resultsToCsv, aircraftToCsv } from './query.js';
 import { MapView, colorFor } from './mapview.js';
 import { parseCsv, parseHeatmapBuffer, readTarStream } from './parse.js';
-import { fetchLive } from './live.js';
+import { fetchLive, fetchSnapshot, fetchSnapshotIndex, snapshotTraffic, RELAYS } from './live.js';
 import { ColumnBuilder } from './dataset.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -1021,6 +1021,177 @@ function runWorkerImport(target, options, onProgress) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Relevé automatique : données réelles collectées hors du navigateur          */
+/* -------------------------------------------------------------------------- */
+
+function snapshotState() {
+  if (!state.snapshot) {
+    state.snapshot = {
+      loading: false,
+      data: null,
+      zones: [],
+      zoneId: 'dakar',
+      error: null,
+    };
+  }
+  return state.snapshot;
+}
+
+/** Durée de la fenêtre affichée, en minutes (null = tout le relevé). */
+function snapshotWindow() {
+  const el = $('#snapshot-window');
+  const value = el ? Number(el.value) : 60;
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function humanMinutes(minutes) {
+  const m = Math.max(0, Math.round(minutes));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  const rest = m % 60;
+  return rest ? `${h} h ${String(rest).padStart(2, '0')}` : `${h} h`;
+}
+
+function snapshotRows(snapshot, windowMinutes) {
+  const minT = windowMinutes ? snapshot.last - windowMinutes * 60 : -Infinity;
+  const rows = [];
+  for (const sample of snapshot.samples) {
+    if (sample.t < minT) continue;
+    rows.push({
+      t: sample.t,
+      hex: sample.hex,
+      flight: sample.flight,
+      lat: sample.lat,
+      lon: sample.lon,
+      alt: sample.alt,
+      gs: sample.gs,
+      bearing: sample.bearing,
+      registration: sample.registration,
+      typecode: sample.typecode,
+      category: sample.category,
+      military: sample.military,
+    });
+  }
+  return rows;
+}
+
+function updateSnapshotUi() {
+  const snap = snapshotState();
+  const status = $('#snapshot-status');
+  if (!status) return;
+  const mapBtn = $('#snapshot-map');
+  const loadBtn = $('#snapshot-load');
+
+  if (snap.loading) {
+    status.textContent = 'Chargement du relevé automatique…';
+    status.style.color = '';
+    mapBtn.disabled = true;
+    loadBtn.disabled = true;
+    return;
+  }
+  if (snap.error || !snap.data) {
+    status.textContent = snap.error || 'Relevé automatique indisponible.';
+    status.style.color = 'var(--danger)';
+    mapBtn.disabled = true;
+    loadBtn.disabled = true;
+    return;
+  }
+
+  status.style.color = '';
+  const data = snap.data;
+  const label = (data.zone && data.zone.label) || snap.zoneId;
+  const aircraft = new Set(data.samples.map((s) => s.hex)).size;
+  const span = humanMinutes((data.last - data.first) / 60);
+  const lag = humanMinutes(Math.max(0, Date.now() / 1000 - data.last));
+  status.textContent =
+    `${label} · ${nf.format(aircraft)} aéronefs · ${nf.format(data.samples.length)} positions ` +
+    `sur ${span} · dernière relève il y a ${lag}${data.provider ? ` (${data.provider})` : ''}.`;
+  mapBtn.disabled = data.samples.length === 0;
+  loadBtn.disabled = data.samples.length === 0;
+}
+
+function fillSnapshotZones() {
+  const snap = snapshotState();
+  const select = $('#snapshot-zone');
+  if (!select || !snap.zones.length) return;
+  select.innerHTML = '';
+  for (const zone of snap.zones) {
+    const opt = document.createElement('option');
+    opt.value = zone.id;
+    opt.textContent = zone.label || zone.id;
+    select.appendChild(opt);
+  }
+  select.value = snap.zoneId;
+}
+
+async function loadSnapshot(zoneId = null) {
+  const snap = snapshotState();
+  if (zoneId) snap.zoneId = zoneId;
+  snap.loading = true;
+  snap.error = null;
+  updateSnapshotUi();
+  try {
+    if (!snap.zones.length) {
+      const zones = await fetchSnapshotIndex().catch(() => null);
+      if (zones && zones.length) {
+        snap.zones = zones;
+        if (!zones.some((z) => z.id === snap.zoneId)) snap.zoneId = zones[0].id;
+        fillSnapshotZones();
+      }
+    }
+    snap.data = await fetchSnapshot({ zoneId: snap.zoneId });
+  } catch (err) {
+    snap.data = null;
+    snap.error =
+      `Relevé automatique indisponible (${err.message}). Vérifiez que le workflow « Relevé ADS-B automatique » ` +
+      "a bien tourné (onglet Actions du dépôt), ou importez une archive / un CSV à l'étape 2.";
+  } finally {
+    snap.loading = false;
+    updateSnapshotUi();
+  }
+}
+
+/** Affiche la dernière position connue de chaque aéronef et ses traînées. */
+function renderSnapshotMap() {
+  const snap = snapshotState();
+  if (!snap.data) return;
+  const windowMinutes = snapshotWindow();
+  const { points, trails, lastT } = snapshotTraffic(snap.data, { windowMinutes });
+  if (!points.length) {
+    toast('Aucune position dans cette fenêtre : élargissez la fenêtre affichée.', 'error');
+    return;
+  }
+  mapView.renderLive(points, trails);
+  const bounds = points.map((p) => [p.lat, p.lon]);
+  if (bounds.length) mapView.map.fitBounds(bounds, { padding: [40, 40], maxZoom: 10 });
+  toast(
+    `Relevé affiché : ${nf.format(points.length)} aéronefs, dernière position à ${formatTime(lastT)} UTC.`
+  );
+}
+
+/** Ouvre le relevé comme jeu de données interrogeable (filtres, tableaux, CSV). */
+async function buildSnapshotDataset() {
+  const snap = snapshotState();
+  if (!snap.data) {
+    toast('Aucun relevé disponible pour le moment.', 'error');
+    return;
+  }
+  const rows = snapshotRows(snap.data, snapshotWindow());
+  if (!rows.length) {
+    toast('Aucune position dans cette fenêtre : élargissez la fenêtre affichée.', 'error');
+    return;
+  }
+  const label = (snap.data.zone && snap.data.zone.label) || snap.zoneId;
+  const name = `Relevé ${label} · ${formatTime(rows[0].t)} → ${formatTime(rows[rows.length - 1].t)} UTC`;
+  try {
+    const stats = await openRowsDataset(rows, { name, source: 'live' });
+    toast(`Relevé ouvert : ${nf.format(stats.count)} positions réelles, ${nf.format(stats.aircraft)} aéronefs.`);
+  } catch (err) {
+    toast(`Ouverture impossible : ${err.message}`, 'error');
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* Temps réel : ingestion directe des flux ADS-B publics                       */
 /* -------------------------------------------------------------------------- */
 
@@ -1126,7 +1297,7 @@ async function pollLive() {
   live.busy = true;
   try {
     const { lat, lon } = mapView.getCenter();
-    const res = await fetchLive({ lat, lon, radiusNm: live.radius });
+    const res = await fetchLive({ lat, lon, radiusNm: live.radius, relays: liveRelays() });
     live.points = res.points;
     live.provider = res.provider;
     live.lastAt = Date.now();
@@ -1181,24 +1352,36 @@ function stopLive() {
   updateLiveUi();
 }
 
-/** Transforme les positions accumulées en jeu de données interrogeable. */
-async function buildLiveDataset() {
-  const live = liveState();
-  if (!live.rows.length) {
-    toast("Aucune position enregistrée : cochez « Enregistrer pour l'historique » et laissez le direct actif.", 'error');
-    return;
+/** Relais à essayer : appel direct, puis relais indiqué (ou r.jina.ai par défaut). */
+function liveRelays() {
+  const input = $('#live-relay');
+  const prefix = input && typeof input.value === 'string' ? input.value.trim() : '';
+  const relays = [RELAYS[0]];
+  if (prefix) {
+    relays.push({
+      id: 'custom',
+      label: 'relais indiqué',
+      wrap: (url) => (prefix.includes('{url}') ? prefix.replace('{url}', url) : prefix + url),
+      text: /jina\.ai/.test(prefix),
+    });
+  } else {
+    relays.push(RELAYS[1]);
   }
-  const rows = live.rows.slice();
+  return relays;
+}
+
+/** Crée un jeu de données à partir de lignes brutes et l'ouvre. */
+async function openRowsDataset(rows, { name, source = 'live' } = {}) {
   setLoading(true, 'Construction du jeu de données…');
   await new Promise((r) => setTimeout(r, 16));
   try {
-    const ds = datasetFromRows(rows, { source: 'live' });
+    const ds = datasetFromRows(rows, { source });
     const stats = describeDataset(ds);
-    const id = `live-${Date.now()}`;
+    const id = `${source}-${Date.now()}`;
     const meta = {
       id,
-      name: `Direct · ${formatTime(rows[0].t)} → ${formatTime(rows[rows.length - 1].t)} UTC`,
-      source: 'live',
+      name,
+      source,
       synthetic: false,
       count: stats.count,
       aircraft: stats.aircraft,
@@ -1210,14 +1393,34 @@ async function buildLiveDataset() {
     try {
       await persistDataset(id, meta, ds);
     } catch (err) {
-      toast('Enregistrement local impossible (volume trop important) : le jeu reste disponible pour cette session.', 'error');
+      toast(
+        'Enregistrement local impossible (volume trop important) : le jeu reste disponible pour cette session.',
+        'error'
+      );
     }
     state.datasets.push(meta);
     state.cache.set(id, { ds, meta, stats });
     await refreshDatasetList();
+    await activateDataset(id);
+    return stats;
+  } finally {
+    setLoading(false);
+  }
+}
+
+/** Transforme les positions accumulées en jeu de données interrogeable. */
+async function buildLiveDataset() {
+  const live = liveState();
+  if (!live.rows.length) {
+    toast("Aucune position enregistrée : cochez « Enregistrer pour l'historique » et laissez le direct actif.", 'error');
+    return;
+  }
+  const rows = live.rows.slice();
+  const name = `Direct · ${formatTime(rows[0].t)} → ${formatTime(rows[rows.length - 1].t)} UTC`;
+  try {
+    const stats = await openRowsDataset(rows, { name, source: 'live' });
     live.rows = [];
     live.lastRecord.clear();
-    await activateDataset(id);
     updateLiveUi();
     toast(
       `Historique enregistré ouvert : ${nf.format(stats.count)} positions réelles, ${nf.format(
@@ -1226,8 +1429,6 @@ async function buildLiveDataset() {
     );
   } catch (err) {
     toast(`Construction impossible : ${err.message}`, 'error');
-  } finally {
-    setLoading(false);
   }
 }
 
@@ -1290,6 +1491,11 @@ function bindEvents() {
     }
   };
   $('#live-build').onclick = () => buildLiveDataset();
+
+  $('#snapshot-zone').onchange = () => loadSnapshot($('#snapshot-zone').value);
+  $('#snapshot-window').onchange = () => updateSnapshotUi();
+  $('#snapshot-map').onclick = () => renderSnapshotMap();
+  $('#snapshot-load').onclick = () => buildSnapshotDataset();
 
   document.addEventListener('visibilitychange', () => {
     const live = liveState();
@@ -1460,6 +1666,8 @@ async function init() {
 
   bindEvents();
   state.cache = new Map();
+  updateSnapshotUi();
+  loadSnapshot('dakar');
 
   try {
     const demo = await loadDemo();

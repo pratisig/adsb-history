@@ -1,0 +1,44 @@
+name: Relevé ADS-B automatique
+
+# Interroge les API ADS-B publiques depuis un runner GitHub (elles n'autorisent
+# pas les appels depuis un navigateur), puis publie le relevé sur la branche
+# `live`. Le site le lit ensuite en JSON : données réelles, sans archive, sans clé.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: live-snapshot
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  releve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Collecte (une relève toutes les 30 s pendant ~7 min)
+        run: node docs/tools/live-snapshot.mjs --out=data --seed --loop-minutes=7 --poll-seconds=30
+      - name: Publication sur la branche live
+        run: |
+          set -euo pipefail
+          git config user.name "releve-adsb"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout --orphan live
+          git rm -rf --quiet . || true
+          git add -f data
+          if git diff --cached --quiet; then
+            echo "Aucune donnée à publier."
+            exit 0
+          fi
+          git commit -q -m "relevé $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push --force origin HEAD:live

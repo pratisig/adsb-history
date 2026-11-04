@@ -52,31 +52,44 @@ jours parce qu'elle est simulée ; vos imports réels peuvent couvrir plusieurs 
 
 ---
 
-## 2 bis. Voir les données réelles tout de suite (temps réel, sans archive)
+## 2 bis. Voir les données réelles tout de suite (sans archive)
 
-Carte **« 5 · Temps réel »** dans la barre latérale :
+Carte **« 5 · Données réelles »** dans la barre latérale. Deux voies :
 
-1. cadrez la zone qui vous intéresse sur la carte (bouton **Dakar** pour y aller directement) ;
-2. choisissez un **rayon** (10 à 250 NM) et un **rafraîchissement** (5 à 60 s) ;
-3. cliquez sur **Activer**.
+### a) Relevé automatique (recommandé — fonctionne partout)
 
-L'application interroge alors directement les **API ADS-B publiques** — `adsb.lol`,
-`airplanes.live`, `adsb.fi`, puis `OpenSky` en dernier recours — et affiche les aéronefs réels
-autour du centre de la carte : positions, indicatifs, altitudes, vitesses, traînées accumulées
-pendant la session. Aucun téléchargement, aucune archive, aucune clé d'API.
+Un **workflow GitHub Actions** (`.github/workflows/live-snapshot.yml`) interroge les API ADS-B
+publiques toutes les 30 s, pour les zones listées dans `docs/data/live-zones.json`
+(Dakar, Saint-Louis, Ziguinchor, Paris, Montréal…), et publie le résultat sur la branche
+`live` du dépôt. La page lit ensuite ce JSON : **données réelles, aucune archive, aucune clé,
+aucun compte**.
 
-**Construire de l'historique réel** : cochez *« Enregistrer pour l'historique »* et laissez
-l'onglet ouvert. Les positions reçues s'accumulent localement (1 point / 10 s et par aéronef,
-plafond 250 000 points). Le bouton *« Ouvrir l'historique enregistré »* transforme cet
-enregistrement en jeu de données interrogeable comme n'importe quel autre (filtres, carte,
-tableaux, export CSV) — vous pouvez donc constituer votre propre historique de votre région,
-jour après jour, sans jamais télécharger d'archive.
+1. choisissez la **zone relevée** et la **fenêtre affichée** (30 min, 1 h, 3 h ou tout le relevé) ;
+2. **Afficher sur la carte** → dernière position de chaque aéronef + traînée récente ;
+3. **Explorer l'historique réel** → le relevé devient un jeu de données complet : filtres,
+   période, carte, tableau des aéronefs, export CSV.
 
-> ⚠️ Ces API sont publiques et gratuites : gardez un rafraîchissement raisonnable (10–30 s) et
-> un seul onglet à la fois. Certains réseaux d'entreprise, filtres DNS ou bloqueurs de
-> publicité bloquent ces domaines — l'application essaie alors les quatre fournisseurs et
-> affiche un message explicite si aucun n'est joignable. L'onglet en arrière-plan met la
-> surveillance en pause automatiquement.
+Le relevé couvre les 3 dernières heures (fenêtre glissante). Comptez quelques minutes de décalage
+par rapport à l'instant présent : GitHub espace les exécutions planifiées.
+
+> Pour ajouter une zone, éditez `docs/data/live-zones.json` (identifiant, libellé, latitude,
+> longitude, rayon en NM) ; le prochain passage du workflow s'en occupe.
+> Si l'onglet **Actions** du dépôt affiche « Workflows aren't running on this fork », cliquez une
+> fois sur *I have read and I understand my workflows, go ahead and enable them* — c'est ce qui
+> autorise le relevé automatique.
+
+### b) Direct depuis le navigateur (avancé, derrière un relais)
+
+Les API ADS-B publiques **ne renvoient pas d'en-tête `Access-Control-Allow-Origin`** : un
+navigateur ne peut pas lire leurs réponses directement, quel que soit le réseau. C'est pour cela
+que le relevé automatique existe. La section *« Direct depuis le navigateur »* reste utile si
+vous passez par un **relais CORS** (champ dédié, `https://r.jina.ai/` essayé par défaut) ou par
+un serveur local.
+
+Cochez *« Enregistrer pour l'historique »* pour accumuler les positions reçues (1 point / 10 s et
+par aéronef, plafond 250 000), puis *« Ouvrir l'historique enregistré »* pour l'interroger comme
+n'importe quel jeu de données. L'onglet en arrière-plan met la surveillance en pause
+automatiquement.
 
 ---
 
@@ -84,11 +97,12 @@ jour après jour, sans jamais télécharger d'archive.
 
 ### 3.0 D'où viennent les données ?
 
-Le site ne contient **aucune** donnée réelle : il n'affiche que ce que vous y chargez. Trois
-sources possibles :
+Le site n'embarque aucune donnée d'exemple réelle : il affiche le **relevé automatique** du dépôt
+(voir §2 bis) et, pour aller plus loin, ce que vous y chargez. Sources possibles :
 
 | Source | Ce que vous obtenez | Poids | Comment l'importer |
 | --- | --- | --- | --- |
+| **Relevé automatique** (workflow du dépôt) | les dernières heures de trafic autour des zones suivies | ≈ 100 Ko | automatique — carte « 5 · Données réelles » |
 | **[Archives adsb.lol](https://github.com/adsblol/globe_history_2025/releases)** | toutes les positions ADS-B mondiales, **1 jour par archive** | ≈ 3 Go / jour (`.tar.aa` + `.tar.ab`) | glisser-déposer **ou** coller l'URL de téléchargement |
 | **CSV** (export OpenSky, dump1090/tar1090, votre récepteur, relevé perso) | les positions que vous avez | quelques Ko → centaines de Mo | glisser-déposer |
 | **Turnstone complet** (PostgreSQL/PostGIS) | des mois, voire des années | — | hors navigateur (voir le README principal) |
@@ -188,7 +202,7 @@ Règles pratiques :
 | **Détail** | panneau par aéronef : métadonnées, statistiques, profil d'altitude, isolement du vol |
 | **Chronologie** | histogramme des positions et du nombre d'aéronefs dans la sélection |
 | **Export** | CSV des positions filtrées et CSV de la synthèse par aéronef |
-| **Temps réel** | ingestion directe des API ADS-B publiques (4 fournisseurs en cascade), traînées et enregistrement local |
+| **Données réelles** | relevé automatique des API ADS-B publiques (workflow du dépôt, zones paramétrables) et, en option, direct navigateur via relais |
 | **Cumul** | import jour par jour fusionné dans un même jeu de données (couverture multi-jours) |
 | **Import URL** | téléchargement + décodage en flux d'une archive depuis son adresse (si CORS autorisé) |
 | **Stockage** | jeux de données importés conservés localement (IndexedDB), suppression possible |
