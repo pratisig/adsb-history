@@ -8,7 +8,7 @@ plausible autour du Sénégal et de l'Afrique de l'Ouest, avec des survols
 long-courriers Europe / Afrique / Amérique du Sud.
 
 Usage :
-    python3 lite/tools/make_demo_data.py > lite/data/demo.json
+    python3 docs/tools/make_demo_data.py > docs/data/demo.json
 """
 
 import json

@@ -1,6 +1,6 @@
 /**
  * Tests du décodeur et du moteur de requête de Turnstone Lite.
- * Exécution : node lite/test/run-tests.mjs
+ * Exécution : node docs/test/run-tests.mjs
  */
 
 import { readFile } from 'node:fs/promises';

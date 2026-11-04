@@ -1,5 +1,9 @@
 # Turnstone Lite — historique de vols ADS-B, sans installation
 
+> Ce dossier **est** le site : il est publié par GitHub Pages
+> (*Settings → Pages → branch `main`, folder `/docs`*) à l'adresse
+> <https://pratisig.github.io/adsb-history/>.
+
 **Turnstone Lite** est une version allégée de [Turnstone](https://github.com/bellingcat/adsb-history)
 qui tourne **entirement dans le navigateur** : pas de PostgreSQL/PostGIS, pas d'API Flask,
 pas de Firebase, pas de `npm install`, pas de compte, pas de clé API.
@@ -13,8 +17,8 @@ vous explorez les vols — puis vous exportez les résultats en CSV.
 
 ### Option A — hébergement statique (recommandé)
 
-Le dossier `lite/` n'est fait que de fichiers statiques : il peut être publié tel quel sur
-GitHub Pages, Netlify, Vercel, Cloudflare Pages, un simple bucket S3… (voir §6).
+Ce dossier n'est fait que de fichiers statiques : il peut être publié tel quel sur GitHub
+Pages (c'est déjà le cas), Netlify, Vercel, Cloudflare Pages, un simple bucket S3… (voir §6).
 
 ### Option B — en local, sans rien installer
 
@@ -22,10 +26,10 @@ Un serveur de fichiers suffit (Python est déjà présent sur macOS/Linux) :
 
 ```bash
 # depuis la racine du dépôt
-python3 -m http.server 8000 --directory lite
+python3 -m http.server 8000 --directory docs
 ```
 
-Puis ouvrez <http://localhost:8000>. Sur Windows : `py -m http.server 8000 --directory lite`.
+Puis ouvrez <http://localhost:8000>. Sur Windows : `py -m http.server 8000 --directory docs`.
 
 > Pourquoi un serveur ? Les modules JavaScript et le fichier `data/demo.json` ne se chargent pas
 > via `file://`. Aucune dépendance à installer, aucun backend : c'est juste un serveur de fichiers.
@@ -158,18 +162,18 @@ résultats ; pour des mois de données et des requêtes lourdes, utilisez le Tur
 
 ## 6. Héberger le site
 
-Tous les chemins sont relatifs : le dossier `lite/` fonctionne à la racine d'un domaine comme
-dans un sous-dossier.
+Tous les chemins sont relatifs : ce dossier fonctionne à la racine d'un domaine comme dans un
+sous-dossier.
 
 - **GitHub Pages** (3 clics, sans workflow) :
   *Settings → Pages → Source: Deploy from a branch* → **Branch** = `main`,
-  **Folder** = `/lite` → *Save*. Le fichier `lite/.nojekyll` est déjà présent, la page est
-  publiée en une minute sur **<https://pratisig.github.io/adsb-history/>**
-  (dans un sous-dossier : `https://<compte>.github.io/<dépôt>/`).
-- **Netlify / Cloudflare Pages** : *publish directory* = `lite`.
-- **Vercel** : `vercel --cwd lite` ou import du dépôt avec *Root Directory* = `lite`,
+  **Folder** = **`/docs`** (GitHub ne propose que `/` ou `/docs`) → *Save*.
+  Le fichier `.nojekyll` est déjà présent : la page est publiée en une minute sur
+  **<https://pratisig.github.io/adsb-history/>**.
+- **Netlify / Cloudflare Pages** : *publish directory* = `docs`.
+- **Vercel** : `vercel --cwd docs` ou import du dépôt avec *Root Directory* = `docs`,
   framework *Other*, aucune commande de build.
-- **Docker / nginx** : servez simplement le contenu de `lite/`.
+- **Docker / nginx** : servez simplement le contenu de `docs/`.
 
 Aucune variable d'environnement, aucun secret.
 
@@ -178,7 +182,8 @@ Aucune variable d'environnement, aucun secret.
 ## 7. Architecture
 
 ```
-lite/
+docs/
+├── images/                    captures utilisées par le README principal
 ├── index.html                 interface (aucun build)
 ├── assets/
 │   ├── css/app.css
@@ -207,7 +212,7 @@ altitude ×25 ft, vitesse sol ÷10 kt, `-123` = au sol.
 ### Tests
 
 ```bash
-node lite/test/run-tests.mjs
+node docs/test/run-tests.mjs
 ```
 
 Couvre : décodage d'une archive tar, archive découpée (`.aa` + `.ab`), filtrage géographique à
@@ -216,8 +221,8 @@ l'import, import CSV, filtres, agrégation, chronologie et export.
 ### Régénérer les données de démonstration
 
 ```bash
-python3 lite/tools/make_demo_data.py > lite/data/demo.json
-python3 lite/tools/make_test_fixture.py
+python3 docs/tools/make_demo_data.py > docs/data/demo.json
+python3 docs/tools/make_test_fixture.py
 ```
 
 ---

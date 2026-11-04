@@ -10,17 +10,18 @@ For more information and background, see [the associated presentation at WHY2025
 
 > ### 🛩️ Just want to explore flight history? Use **Turnstone Lite**
 >
-> [`lite/`](lite/README.md) is a browser-only edition of this project: **no PostgreSQL, no
-> API server, no Firebase, no `npm install`**. Drop a `globe_history` archive (or a CSV) on
-> the page, draw an area on the map, filter by time / altitude / speed / callsign, inspect each
-> aircraft's track, and export CSV — everything runs locally in the browser.
+> [`docs/`](docs/README.md) (published by GitHub Pages) is a browser-only edition of this
+> project: **no PostgreSQL, no API server, no Firebase, no `npm install`**. Drop a
+> `globe_history` archive (or a CSV) on the page, draw an area on the map, filter by time /
+> altitude / speed / callsign, inspect each aircraft's track, and export CSV — everything runs
+> locally in the browser.
 >
 > ```bash
-> python3 -m http.server 8000 --directory lite   # then open http://localhost:8000
+> python3 -m http.server 8000 --directory docs   # then open http://localhost:8000
 > ```
 >
 > It ships with a synthetic demo dataset so you can try it immediately. See
-> [`lite/README.md`](lite/README.md) (in French) for details.
+> [`docs/README.md`](docs/README.md) (in French) for details.
 
 ## Overview
 
