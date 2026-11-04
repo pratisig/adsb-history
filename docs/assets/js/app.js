@@ -14,6 +14,7 @@ import {
 import { queryDataset, aggregateByAircraft, buildTimeline, resultsToCsv, aircraftToCsv } from './query.js';
 import { MapView, colorFor } from './mapview.js';
 import { parseCsv, parseHeatmapBuffer, readTarStream } from './parse.js';
+import { fetchLive } from './live.js';
 import { ColumnBuilder } from './dataset.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -78,9 +79,13 @@ function dtToEpoch(value) {
   return Number.isFinite(ms) ? ms / 1000 : null;
 }
 
-function epochToDt(seconds) {
+function epochToDt(seconds, round = 'floor') {
   if (seconds === null || seconds === undefined) return '';
-  return new Date(seconds * 1000).toISOString().slice(0, 16);
+  const ms = seconds * 1000;
+  // on arrondit au minuteur le plus proche sans jamais exclure les données :
+  // le début descend, la fin monte (sinon un jeu de données de < 1 min serait vide)
+  const rounded = (round === 'ceil' ? Math.ceil(ms / 60000) : Math.floor(ms / 60000)) * 60000;
+  return new Date(rounded).toISOString().slice(0, 16);
 }
 
 function download(filename, text) {
@@ -198,6 +203,13 @@ async function loadDemo() {
 
 async function refreshDatasetList() {
   const imported = await dbAll('datasets').catch(() => []);
+  const known = new Map(imported.map((d) => [d.id, d]));
+  for (const [id, entry] of (state.cache || new Map())) {
+    if (id === 'demo' || known.has(id)) continue;
+    known.set(id, { id, ...entry.meta });
+  }
+  imported.length = 0;
+  imported.push(...known.values());
   const demoEntry = {
     id: 'demo',
     name: (state.cache.get('demo') || {}).meta?.name || 'Démonstration',
@@ -260,8 +272,8 @@ async function activateDataset(id) {
   $('#military-select').disabled = !hasMeta;
 
   // période par défaut = couverture complète
-  $('#start-input').value = epochToDt(state.stats.tMin);
-  $('#end-input').value = epochToDt(state.stats.tMax);
+  $('#start-input').value = epochToDt(state.stats.tMin, 'floor');
+  $('#end-input').value = epochToDt(state.stats.tMax, 'ceil');
   document.querySelectorAll('#period-chips button').forEach((b) => b.classList.remove('active'));
   document.querySelector('#period-chips button[data-all]').classList.add('active');
 
@@ -312,8 +324,8 @@ function setBbox(bbox) {
 function applyPeriod(hours) {
   const end = state.stats.tMax || Date.now() / 1000;
   const start = Math.max(state.stats.tMin || end - hours * 3600, end - hours * 3600);
-  $('#start-input').value = epochToDt(start);
-  $('#end-input').value = epochToDt(end);
+  $('#start-input').value = epochToDt(start, 'floor');
+  $('#end-input').value = epochToDt(end, 'ceil');
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1009,6 +1021,217 @@ function runWorkerImport(target, options, onProgress) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Temps réel : ingestion directe des flux ADS-B publics                       */
+/* -------------------------------------------------------------------------- */
+
+const LIVE_TICK_MS = 1000;
+
+function liveState() {
+  if (!state.live) {
+    state.live = {
+      active: false,
+      timer: null,
+      ticker: null,
+      busy: false,
+      radius: 50,
+      interval: 10,
+      recording: false,
+      points: [],
+      trails: new Map(),
+      rows: [],
+      lastRecord: new Map(),
+      provider: null,
+      lastAt: null,
+      error: null,
+    };
+  }
+  return state.live;
+}
+
+function readLiveOptions() {
+  const live = liveState();
+  live.radius = Number($('#live-radius').value) || 50;
+  live.interval = Number($('#live-interval').value) || 10;
+  return live;
+}
+
+function updateLiveUi() {
+  const live = liveState();
+  if (!$('#live-toggle')) return;
+  const card = document.querySelector('.live-card');
+  const toggle = $('#live-toggle');
+  toggle.textContent = live.active ? 'Arrêter' : 'Activer';
+  toggle.classList.toggle('primary', !live.active);
+  if (card) card.classList.toggle('active', live.active);
+  $('#live-panel').hidden = !live.active;
+  $('#live-build').disabled = live.rows.length === 0;
+
+  const status = $('#live-status');
+  if (!live.active) {
+    status.textContent = live.rows.length
+      ? `Inactif · ${nf.format(live.rows.length)} positions enregistrées en attente.`
+      : 'Inactif.';
+    status.style.color = '';
+    return;
+  }
+  if (live.error) {
+    status.textContent = live.error;
+    status.style.color = 'var(--danger)';
+    $('#live-panel').classList.add('error');
+    $('#live-count').textContent = '0';
+    $('#live-provider').textContent = '';
+    $('#live-ago').textContent = '';
+    return;
+  }
+  status.style.color = '';
+  $('#live-panel').classList.remove('error');
+  const ago = live.lastAt ? Math.max(0, Math.round((Date.now() - live.lastAt) / 1000)) : null;
+  status.textContent =
+    `${nf.format(live.points.length)} aéronefs reçus${live.provider ? ` · ${live.provider}` : ''}` +
+    `${live.recording ? ` · ${nf.format(live.rows.length)} positions enregistrées` : ' · enregistrement désactivé'}`;
+  $('#live-count').textContent = nf.format(live.points.length);
+  $('#live-provider').textContent = live.provider ? `· ${live.provider}` : '';
+  $('#live-ago').textContent = ago !== null ? `· il y a ${ago} s` : '';
+}
+
+/** Enregistre les nouvelles positions (max 1 point / 10 s et par aéronef). */
+function recordLive(points, timestamp) {
+  const live = liveState();
+  if (!live.recording) return;
+  for (const p of points) {
+    const last = live.lastRecord.get(p.hex);
+    if (last !== undefined && timestamp - last < 10) continue;
+    live.lastRecord.set(p.hex, timestamp);
+    live.rows.push({
+      t: timestamp,
+      hex: p.hex,
+      flight: p.flight,
+      lat: p.lat,
+      lon: p.lon,
+      alt: p.alt,
+      gs: p.gs,
+      bearing: p.bearing,
+      registration: p.reg,
+      typecode: p.type,
+      category: p.category,
+      military: p.military,
+    });
+  }
+  if (live.rows.length > 250000) live.rows.splice(0, live.rows.length - 250000);
+}
+
+async function pollLive() {
+  const live = liveState();
+  if (!live.active || live.busy) return;
+  live.busy = true;
+  try {
+    const { lat, lon } = mapView.getCenter();
+    const res = await fetchLive({ lat, lon, radiusNm: live.radius });
+    live.points = res.points;
+    live.provider = res.provider;
+    live.lastAt = Date.now();
+    live.error = null;
+
+    const now = res.timestamp / 1000;
+    for (const p of res.points) {
+      let path = live.trails.get(p.hex);
+      if (!path) {
+        path = [];
+        live.trails.set(p.hex, path);
+      }
+      const last = path[path.length - 1];
+      if (!last || last[0] !== p.lat || last[1] !== p.lon) path.push([p.lat, p.lon, now]);
+      if (path.length > 240) path.shift();
+    }
+
+    recordLive(res.points, now);
+    mapView.renderLive(res.points, live.trails);
+  } catch (err) {
+    live.error = err.message;
+    live.points = [];
+    console.warn(err);
+  } finally {
+    live.busy = false;
+    updateLiveUi();
+  }
+}
+
+function startLive() {
+  const live = readLiveOptions();
+  if (live.active) return;
+  live.active = true;
+  live.error = null;
+  live.trails.clear();
+  updateLiveUi();
+  pollLive();
+  live.timer = setInterval(pollLive, live.interval * 1000);
+  live.ticker = setInterval(updateLiveUi, LIVE_TICK_MS);
+  toast(`Direct activé : interrogation des API ADS-B toutes les ${live.interval} s.`);
+}
+
+function stopLive() {
+  const live = liveState();
+  live.active = false;
+  clearInterval(live.timer);
+  clearInterval(live.ticker);
+  live.timer = null;
+  live.ticker = null;
+  live.points = [];
+  mapView.clearLive();
+  updateLiveUi();
+}
+
+/** Transforme les positions accumulées en jeu de données interrogeable. */
+async function buildLiveDataset() {
+  const live = liveState();
+  if (!live.rows.length) {
+    toast("Aucune position enregistrée : cochez « Enregistrer pour l'historique » et laissez le direct actif.", 'error');
+    return;
+  }
+  const rows = live.rows.slice();
+  setLoading(true, 'Construction du jeu de données…');
+  await new Promise((r) => setTimeout(r, 16));
+  try {
+    const ds = datasetFromRows(rows, { source: 'live' });
+    const stats = describeDataset(ds);
+    const id = `live-${Date.now()}`;
+    const meta = {
+      id,
+      name: `Direct · ${formatTime(rows[0].t)} → ${formatTime(rows[rows.length - 1].t)} UTC`,
+      source: 'live',
+      synthetic: false,
+      count: stats.count,
+      aircraft: stats.aircraft,
+      tMin: stats.tMin,
+      tMax: stats.tMax,
+      importedAt: Date.now(),
+      bbox: null,
+    };
+    try {
+      await persistDataset(id, meta, ds);
+    } catch (err) {
+      toast('Enregistrement local impossible (volume trop important) : le jeu reste disponible pour cette session.', 'error');
+    }
+    state.datasets.push(meta);
+    state.cache.set(id, { ds, meta, stats });
+    await refreshDatasetList();
+    live.rows = [];
+    live.lastRecord.clear();
+    await activateDataset(id);
+    updateLiveUi();
+    toast(
+      `Historique enregistré ouvert : ${nf.format(stats.count)} positions réelles, ${nf.format(
+        stats.aircraft
+      )} aéronefs.`
+    );
+  } catch (err) {
+    toast(`Construction impossible : ${err.message}`, 'error');
+  } finally {
+    setLoading(false);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* Initialisation                                                              */
 /* -------------------------------------------------------------------------- */
 
@@ -1041,6 +1264,45 @@ function bindEvents() {
     toast('Jeu de données supprimé.');
   };
 
+  $('#live-toggle').onclick = () => (liveState().active ? stopLive() : startLive());
+  $('#live-dakar').onclick = () => {
+    mapView.centerOn(14.7397, -17.4902, 9);
+    toast('Carte centrée sur Dakar (Yoff).');
+    if (liveState().active) pollLive();
+  };
+  $('#live-radius').onchange = () => {
+    readLiveOptions();
+    if (liveState().active) pollLive();
+  };
+  $('#live-interval').onchange = () => {
+    const live = readLiveOptions();
+    if (live.active) {
+      clearInterval(live.timer);
+      live.timer = setInterval(pollLive, live.interval * 1000);
+    }
+    updateLiveUi();
+  };
+  $('#live-record').onchange = (e) => {
+    liveState().recording = e.target.checked;
+    updateLiveUi();
+    if (e.target.checked) {
+      toast('Enregistrement activé : les positions reçues s’accumulent localement (IndexedDB à l’ouverture).');
+    }
+  };
+  $('#live-build').onclick = () => buildLiveDataset();
+
+  document.addEventListener('visibilitychange', () => {
+    const live = liveState();
+    if (!live.active) return;
+    if (document.hidden) {
+      clearInterval(live.timer);
+      live.timer = null;
+    } else if (!live.timer) {
+      pollLive();
+      live.timer = setInterval(pollLive, live.interval * 1000);
+    }
+  });
+
   $('#btn-search').onclick = () => runQuery({ fit: true });
   $('#btn-reset').onclick = async () => {
     ['#hex-input', '#flight-input', '#reg-input', '#min-alt', '#max-alt', '#min-gs', '#max-gs', '#min-brg', '#max-brg'].forEach(
@@ -1051,8 +1313,8 @@ function bindEvents() {
     $('#category-select').value = '';
     $('#military-select').value = 'any';
     setBbox(null);
-    $('#start-input').value = epochToDt(state.stats.tMin);
-    $('#end-input').value = epochToDt(state.stats.tMax);
+    $('#start-input').value = epochToDt(state.stats.tMin, 'floor');
+    $('#end-input').value = epochToDt(state.stats.tMax, 'ceil');
     document.querySelectorAll('#period-chips button').forEach((b) => b.classList.remove('active'));
     document.querySelector('#period-chips button[data-all]').classList.add('active');
     await runQuery({ fit: true });
@@ -1076,8 +1338,8 @@ function bindEvents() {
       document.querySelectorAll('#period-chips button').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       if (btn.dataset.all) {
-        $('#start-input').value = epochToDt(state.stats.tMin);
-        $('#end-input').value = epochToDt(state.stats.tMax);
+        $('#start-input').value = epochToDt(state.stats.tMin, 'floor');
+        $('#end-input').value = epochToDt(state.stats.tMax, 'ceil');
       } else {
         applyPeriod(Number(btn.dataset.hours));
       }
@@ -1211,6 +1473,7 @@ async function init() {
       ],
       { padding: [20, 20] }
     );
+    updateLiveUi();
   } catch (err) {
     console.error(err);
     const hint =

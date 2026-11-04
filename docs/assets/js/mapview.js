@@ -44,6 +44,7 @@ export class MapView {
     this.map.attributionControl.setPrefix('');
     this.trackLayer = L.layerGroup().addTo(this.map);
     this.markerLayer = L.layerGroup().addTo(this.map);
+    this.liveLayer = L.layerGroup().addTo(this.map);
     this.rect = null;
     this.drawEnabled = false;
     this.handlers = handlers;
@@ -205,5 +206,58 @@ export class MapView {
   clearTracks() {
     this.trackLayer.clearLayers();
     this.markerLayer.clearLayers();
+  }
+
+  /**
+   * Affiche le trafic en direct (marqueurs cyan + traînées accumulées).
+   * @param {Array} points
+   * @param {Map<string, Array<[number, number]>>} [trails]
+   */
+  renderLive(points = [], trails = null) {
+    this.liveLayer.clearLayers();
+
+    if (trails && trails.size) {
+      for (const [, path] of trails) {
+        if (path.length < 2) continue;
+        L.polyline(path, {
+          color: '#4cc9f0',
+          weight: 1.4,
+          opacity: 0.45,
+          renderer: this.canvasRenderer,
+          interactive: false,
+        }).addTo(this.liveLayer);
+      }
+    }
+
+    for (const p of points) {
+      const marker = L.circleMarker([p.lat, p.lon], {
+        radius: 4.5,
+        color: p.military ? '#ff6b6b' : '#4cc9f0',
+        weight: 1.5,
+        fillColor: p.military ? '#ff6b6b' : '#4cc9f0',
+        fillOpacity: 0.95,
+        renderer: this.canvasRenderer,
+      }).addTo(this.liveLayer);
+
+      const alt = p.alt === -123 ? 'au sol' : p.alt !== null ? `${Math.round(p.alt).toLocaleString('fr-FR')} ft` : 'alt. ?';
+      const spd = p.gs !== null ? `${Math.round(p.gs)} kt` : '';
+      marker.bindTooltip(
+        [p.flight || p.hex, p.type, alt, spd].filter(Boolean).join(' · '),
+        { direction: 'top', className: 'track-tip', offset: [0, -6] }
+      );
+    }
+  }
+
+  clearLive() {
+    this.liveLayer.clearLayers();
+  }
+
+  centerOn(lat, lon, zoom = 9) {
+    this.map.setView([lat, lon], zoom);
+  }
+
+  getCenter() {
+    const c = this.map.getCenter();
+    return { lat: c.lat, lon: c.lng };
   }
 }

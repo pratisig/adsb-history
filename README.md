@@ -11,10 +11,11 @@ For more information and background, see [the associated presentation at WHY2025
 > ### 🛩️ Just want to explore flight history? Use **Turnstone Lite**
 >
 > [`docs/`](docs/README.md) (published by GitHub Pages) is a browser-only edition of this
-> project: **no PostgreSQL, no API server, no Firebase, no `npm install`**. Drop a
-> `globe_history` archive (or a CSV) on the page, draw an area on the map, filter by time /
-> altitude / speed / callsign, inspect each aircraft's track, and export CSV — everything runs
-> locally in the browser.
+> project: **no PostgreSQL, no API server, no Firebase, no `npm install`**. Watch **live
+> traffic ingested straight from public ADS-B APIs** (adsb.lol, airplanes.live, adsb.fi,
+> OpenSky) and record it locally to build your own history, or drop a `globe_history` archive /
+> CSV on the page. Draw an area, filter by time / altitude / speed / callsign, inspect each
+> aircraft's track, export CSV — everything runs locally in the browser.
 >
 > ```bash
 > python3 -m http.server 8000 --directory docs   # then open http://localhost:8000
