@@ -93,6 +93,10 @@ résultat sur la branche `live`. La page lit ensuite ce JSON : **3 heures de tra
 Le workflow se relance toutes les 10 minutes et à chaque modification de `main`. Comptez
 quelques minutes de décalage : GitHub espace les exécutions planifiées.
 
+**Au chargement de la page, si ce relevé existe, il s'ouvre tout seul** : la carte, le résumé,
+les tableaux et les exports travaillent alors sur du trafic réel — la démonstration simulée
+reste disponible dans la liste des jeux de données.
+
 > Pour ajouter une zone, éditez `docs/data/live-zones.json` (identifiant, libellé, latitude,
 > longitude, rayon en NM) — le prochain passage s'en occupe.
 > Si l'onglet **Actions** du dépôt affiche « Workflows aren't running on this fork », cliquez une

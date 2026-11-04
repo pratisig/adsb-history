@@ -1162,7 +1162,7 @@ async function loadSnapshot(zoneId = null) {
 }
 
 /** Affiche la dernière position connue de chaque aéronef et ses traînées. */
-function renderSnapshotMap() {
+function renderSnapshotMap({ silent = false } = {}) {
   const snap = snapshotState();
   if (!snap.data) return;
   const windowMinutes = snapshotWindow();
@@ -1174,9 +1174,52 @@ function renderSnapshotMap() {
   mapView.renderLive(points, trails);
   const bounds = points.map((p) => [p.lat, p.lon]);
   if (bounds.length) mapView.map.fitBounds(bounds, { padding: [40, 40], maxZoom: 10 });
-  toast(
-    `Relevé affiché : ${nf.format(points.length)} aéronefs, dernière position à ${formatTime(lastT)} UTC.`
-  );
+  if (!silent) {
+    toast(
+      `Relevé affiché : ${nf.format(points.length)} aéronefs, dernière position à ${formatTime(lastT)} UTC.`
+    );
+  }
+}
+
+/**
+ * Au chargement : si un relevé réel est disponible, on l'ouvre directement pour que
+ * la carte, les tableaux et le résumé montrent du trafic réel dès l'arrivée.
+ */
+async function maybeAutoOpenSnapshot() {
+  const snap = snapshotState();
+  if (!snap.data || !snap.data.samples.length) return;
+  if (state.activeId && state.activeId !== 'demo') return;
+  const label = (snap.data.zone && snap.data.zone.label) || snap.zoneId;
+  const rows = snapshotRows(snap.data, null);
+  if (!rows.length) return;
+  try {
+    const ds = datasetFromRows(rows, { source: 'live' });
+    const stats = describeDataset(ds);
+    const id = `live-snapshot-${snap.zoneId}`;
+    const meta = {
+      id,
+      name: `Relevé ${label} · ${formatTime(rows[0].t)} → ${formatTime(rows[rows.length - 1].t)} UTC`,
+      source: 'live',
+      synthetic: false,
+      count: stats.count,
+      aircraft: stats.aircraft,
+      tMin: stats.tMin,
+      tMax: stats.tMax,
+      importedAt: Date.now(),
+      bbox: null,
+    };
+    state.datasets = state.datasets.filter((d) => d.id !== id);
+    state.cache.set(id, { ds, meta, stats });
+    await refreshDatasetList();
+    await activateDataset(id);
+    renderSnapshotMap({ silent: true });
+    toast(
+      `Relevé réel chargé : ${nf.format(stats.aircraft)} aéronefs, ${nf.format(stats.count)} positions ` +
+        `(${label}). Choisissez « Démonstration » dans la liste pour revenir aux données simulées.`
+    );
+  } catch (err) {
+    console.warn('Ouverture automatique du relevé impossible :', err);
+  }
 }
 
 /** Ouvre le relevé comme jeu de données interrogeable (filtres, tableaux, CSV). */
@@ -1796,11 +1839,13 @@ async function init() {
       { padding: [20, 20] }
     );
     updateLiveUi();
+    // si un relevé réel est disponible, il devient la vue par défaut
+    await maybeAutoOpenSnapshot();
   } catch (err) {
     console.error(err);
     const hint =
       location.protocol === 'file:'
-        ? " Cette page est ouverte en file:// : lancez plutôt « python3 -m http.server 8000 --directory lite » puis ouvrez http://localhost:8000."
+        ? " Cette page est ouverte en file:// : lancez plutôt « python3 -m http.server 8000 --directory docs » puis ouvrez http://localhost:8000."
         : '';
     toast(`Chargement de la démo impossible : ${err.message}.${hint}`, 'error');
     setLoading(false);
