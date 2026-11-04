@@ -148,44 +148,80 @@
         </section>
 
         <section class="card live-card">
-          <h2><span class="step">5</span> Temps réel</h2>
+          <h2><span class="step">5</span> Données réelles</h2>
           <p class="hint">
-            Positions réelles autour du centre de la carte, ingérées directement depuis les API
-            ADS-B publiques — aucune archive à télécharger.
+            Relevé ADS-B automatique de votre région, collecté toutes les 30 s par le dépôt
+            puis publié en JSON : rien à télécharger, aucune clé, aucun compte.
           </p>
-          <div class="row wrap">
-            <button id="live-toggle" class="btn small primary">Activer</button>
-            <button id="live-dakar" class="btn small ghost">Dakar</button>
+          <div class="snapshot-box">
+            <div class="field-pair">
+              <label class="field">
+                <span>Zone relevée</span>
+                <select id="snapshot-zone">
+                  <option value="dakar" selected>Dakar</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Fenêtre affichée</span>
+                <select id="snapshot-window">
+                  <option value="30">30 min</option>
+                  <option value="60" selected>1 h</option>
+                  <option value="180">3 h</option>
+                  <option value="0">Tout le relevé</option>
+                </select>
+              </label>
+            </div>
+            <p class="hint" id="snapshot-status">Chargement du relevé automatique…</p>
+            <div class="row wrap">
+              <button id="snapshot-map" class="btn small" disabled>Afficher sur la carte</button>
+              <button id="snapshot-load" class="btn small primary" disabled>Explorer l'historique réel</button>
+            </div>
           </div>
-          <div class="field-pair">
+          <details class="live-direct">
+            <summary>Direct depuis le navigateur (avancé)</summary>
+            <p class="hint">
+              Aucune API ADS-B publique n'envoie d'en-tête CORS : un navigateur ne peut pas les
+              lire directement, quel que soit le réseau. Cette voie ne fonctionne que derrière un
+              relais CORS ou un serveur local.
+            </p>
+            <div class="row wrap">
+              <button id="live-toggle" class="btn small ghost">Activer</button>
+              <button id="live-dakar" class="btn small ghost">Dakar</button>
+            </div>
+            <div class="field-pair">
+              <label class="field">
+                <span>Rayon</span>
+                <select id="live-radius">
+                  <option value="10">10 NM</option>
+                  <option value="25">25 NM</option>
+                  <option value="50" selected>50 NM</option>
+                  <option value="100">100 NM</option>
+                  <option value="250">250 NM</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Rafraîchir</span>
+                <select id="live-interval">
+                  <option value="5">5 s</option>
+                  <option value="10" selected>10 s</option>
+                  <option value="30">30 s</option>
+                  <option value="60">60 s</option>
+                </select>
+              </label>
+            </div>
             <label class="field">
-              <span>Rayon</span>
-              <select id="live-radius">
-                <option value="10">10 NM</option>
-                <option value="25">25 NM</option>
-                <option value="50" selected>50 NM</option>
-                <option value="100">100 NM</option>
-                <option value="250">250 NM</option>
-              </select>
+              <span>Relais CORS (facultatif)</span>
+              <input id="live-relay" type="url" placeholder="https://r.jina.ai/" autocomplete="off" />
             </label>
-            <label class="field">
-              <span>Rafraîchir</span>
-              <select id="live-interval">
-                <option value="5">5 s</option>
-                <option value="10" selected>10 s</option>
-                <option value="30">30 s</option>
-                <option value="60">60 s</option>
-              </select>
+            <label class="check">
+              <input type="checkbox" id="live-record" />
+              <span>Enregistrer pour l'historique</span>
             </label>
-          </div>
-          <label class="check">
-            <input type="checkbox" id="live-record" />
-            <span>Enregistrer pour l'historique</span>
-          </label>
-          <p class="hint" id="live-status">Inactif.</p>
-          <button id="live-build" class="btn small wide" disabled>
-            Ouvrir l'historique enregistré
-          </button>
+            <p class="hint" id="live-status">Inactif.</p>
+            <button id="live-build" class="btn small wide" disabled>
+              Ouvrir l'historique enregistré
+            </button>
+          </details>
         </section>
 
         <div class="sidebar-footer">
@@ -446,12 +482,10 @@
             temporelle s'additionnent (voir §3 bis du README pour les volumes réalistes).
           </li>
           <li>
-            <strong>Temps réel</strong> : cliquez sur « Activer » dans la carte « Temps réel » —
-            les positions réelles des aéronefs autour du centre de la carte sont téléchargées
-            directement depuis les API ADS-B publiques (adsb.lol, airplanes.live, adsb.fi,
-            OpenSky), sans aucune archive. Cochez « Enregistrer pour l'historique » pour
-            constituer votre propre historique au fil du temps, puis « Ouvrir l'historique
-            enregistré » pour l'interroger comme n'importe quel jeu de données.
+            <strong>Données réelles</strong> : la carte « 5 · Données réelles » lit le relevé
+            automatique du dépôt (trafic réel des dernières heures autour de Dakar, Saint-Louis,
+            Ziguinchor, Paris, Montréal — sans archive ni clé). « Afficher sur la carte » montre
+            les aéronefs, « Explorer l'historique réel » en fait un jeu de données interrogeable.
           </li>
           <li>
             <strong>Requêter</strong> : choisissez une zone (bouton « Dessiner » ou zone
