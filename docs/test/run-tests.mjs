@@ -24,6 +24,7 @@ import {
   extractJson,
   relayUrl,
   RELAYS,
+  RELAYS_PUBLIC,
   fetchSnapshot,
   fetchSnapshotIndex,
   openSkyCost,
@@ -394,10 +395,23 @@ async function main() {
 
     check('extractJson : texte du relais r.jina.ai', extractJson('Title: \n\nMarkdown Content:\n{"ac":[{"hex":"abc"}]}\n') !== null);
     check('extractJson : texte non JSON rejeté', extractJson('Rate limit exceeded') === null);
+    const jina = RELAYS.find((relay) => relay.id === 'jina');
+    const allorigins = RELAYS.find((relay) => relay.id === 'allorigins');
+    const codetabs = RELAYS.find((relay) => relay.id === 'codetabs');
     check(
       'relayUrl : préfixe r.jina.ai',
-      relayUrl(RELAYS[1], 'https://api.adsb.lol/v2/point/1/2/3') === 'https://r.jina.ai/https://api.adsb.lol/v2/point/1/2/3'
+      relayUrl(jina, 'https://api.adsb.lol/v2/point/1/2/3') === 'https://r.jina.ai/https://api.adsb.lol/v2/point/1/2/3'
     );
+    check(
+      'relayUrl : allorigins encode l’URL cible',
+      relayUrl(allorigins, 'https://api.adsb.lol/v2/point/1/2/3') ===
+        'https://api.allorigins.win/raw?url=https%3A%2F%2Fapi.adsb.lol%2Fv2%2Fpoint%2F1%2F2%2F3'
+    );
+    check(
+      'relayUrl : codetabs encode l’URL cible',
+      relayUrl(codetabs, 'https://api.adsb.lol/v2/point/1/2/3').startsWith('https://api.codetabs.com/v1/proxy?quest=https%3A%2F%2F')
+    );
+    check('relais publics : trois relais proposés', RELAYS_PUBLIC.length === 3, String(RELAYS_PUBLIC.length));
     check(
       'relayUrl : appel direct inchangé',
       relayUrl(RELAYS[0], 'https://api.adsb.lol/v2/point/1/2/3') === 'https://api.adsb.lol/v2/point/1/2/3'

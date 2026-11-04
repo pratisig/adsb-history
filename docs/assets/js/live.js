@@ -189,13 +189,28 @@ export const BROWSER_PROVIDERS = [
 export const RELAYS = [
   { id: 'direct', label: 'appel direct', wrap: (url) => url, text: false },
   {
+    id: 'allorigins',
+    label: 'relais allorigins',
+    wrap: (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    text: false,
+  },
+  {
+    id: 'codetabs',
+    label: 'relais codetabs',
+    wrap: (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+    text: false,
+  },
+  {
     id: 'jina',
     label: 'relais r.jina.ai',
-    // r.jina.ai relaie n'importe quelle URL et renvoie un texte qui contient le JSON.
+    // r.jina.ai renvoie un texte qui contient le JSON de la réponse
     wrap: (url) => `https://r.jina.ai/${url}`,
     text: true,
   },
 ];
+
+/** Relais publics proposés (tous sauf l'appel direct). */
+export const RELAYS_PUBLIC = RELAYS.filter((relay) => relay.id !== 'direct');
 
 /** Construit l'URL relayée (préfixe libre accepté, `{url}` facultatif). */
 export function relayUrl(relay, url) {
