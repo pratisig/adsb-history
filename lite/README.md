@@ -161,8 +161,11 @@ résultats ; pour des mois de données et des requêtes lourdes, utilisez le Tur
 Tous les chemins sont relatifs : le dossier `lite/` fonctionne à la racine d'un domaine comme
 dans un sous-dossier.
 
-- **GitHub Pages** : *Settings → Pages → Deploy from a branch*, branche + dossier `/lite`.
-  Sur ce fork, la page est déjà publiée : **<https://pratisig.github.io/adsb-history/>**.
+- **GitHub Pages** (3 clics, sans workflow) :
+  *Settings → Pages → Source: Deploy from a branch* → **Branch** = `main`,
+  **Folder** = `/lite` → *Save*. Le fichier `lite/.nojekyll` est déjà présent, la page est
+  publiée en une minute sur **<https://pratisig.github.io/adsb-history/>**
+  (dans un sous-dossier : `https://<compte>.github.io/<dépôt>/`).
 - **Netlify / Cloudflare Pages** : *publish directory* = `lite`.
 - **Vercel** : `vercel --cwd lite` ou import du dépôt avec *Root Directory* = `lite`,
   framework *Other*, aucune commande de build.
