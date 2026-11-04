@@ -31,8 +31,8 @@ jobs:
       - name: Relevé continu et publication
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # 5 passes de 8 min après un push (≈ 40 min de relevé), 1 passe sinon
-          PASSES: ${{ github.event_name == 'push' && '5' || '1' }}
+          # 3 passes de 8 min après un push (≈ 24 min de relevé continu), 1 passe sinon
+          PASSES: ${{ github.event_name == 'push' && '3' || '1' }}
         run: |
           set -euo pipefail
           publish() {
