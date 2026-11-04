@@ -390,6 +390,7 @@ function renderSummary() {
     ${state.meta && state.meta.synthetic ? '<span class="tag" title="Données simulées pour la démonstration — importez vos propres archives pour du réel">démo simulée</span>' : ''}
     <span class="muted">· ${Math.round(ms)} ms</span>
   `;
+  syncTitle();
 }
 
 function trackList(limit = 600) {
@@ -1085,6 +1086,22 @@ function snapshotRows(snapshot, windowMinutes) {
   return rows;
 }
 
+/** Titre de l'onglet : indique la source affichée (utile aussi pour les diagnostics). */
+function syncTitle() {
+  const snap = snapshotState();
+  const isReal = typeof state.activeId === 'string' && state.activeId.startsWith('live-snapshot');
+  let suffix = '';
+  if (isReal) {
+    const aircraft = state.stats ? state.stats.aircraft : null;
+    suffix = aircraft ? `Relevé réel · ${nf.format(aircraft)} aéronefs` : 'Relevé réel';
+  } else if (state.activeId === 'demo') {
+    suffix = 'démonstration simulée';
+  } else if (snap.error) {
+    suffix = 'relevé indisponible';
+  }
+  document.title = suffix ? `Turnstone Lite — ${suffix}` : 'Turnstone Lite — historique de vols ADS-B';
+}
+
 function updateSnapshotUi() {
   const snap = snapshotState();
   const status = $('#snapshot-status');
@@ -1158,6 +1175,7 @@ async function loadSnapshot(zoneId = null) {
   } finally {
     snap.loading = false;
     updateSnapshotUi();
+    syncTitle();
   }
 }
 
