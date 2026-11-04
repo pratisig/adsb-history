@@ -147,6 +147,47 @@
           </label>
         </section>
 
+        <section class="card live-card">
+          <h2><span class="step">5</span> Temps réel</h2>
+          <p class="hint">
+            Positions réelles autour du centre de la carte, ingérées directement depuis les API
+            ADS-B publiques — aucune archive à télécharger.
+          </p>
+          <div class="row wrap">
+            <button id="live-toggle" class="btn small primary">Activer</button>
+            <button id="live-dakar" class="btn small ghost">Dakar</button>
+          </div>
+          <div class="field-pair">
+            <label class="field">
+              <span>Rayon</span>
+              <select id="live-radius">
+                <option value="10">10 NM</option>
+                <option value="25">25 NM</option>
+                <option value="50" selected>50 NM</option>
+                <option value="100">100 NM</option>
+                <option value="250">250 NM</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Rafraîchir</span>
+              <select id="live-interval">
+                <option value="5">5 s</option>
+                <option value="10" selected>10 s</option>
+                <option value="30">30 s</option>
+                <option value="60">60 s</option>
+              </select>
+            </label>
+          </div>
+          <label class="check">
+            <input type="checkbox" id="live-record" />
+            <span>Enregistrer pour l'historique</span>
+          </label>
+          <p class="hint" id="live-status">Inactif.</p>
+          <button id="live-build" class="btn small wide" disabled>
+            Ouvrir l'historique enregistré
+          </button>
+        </section>
+
         <div class="sidebar-footer">
           <button id="btn-search" class="btn primary wide">Rechercher</button>
           <button id="btn-reset" class="btn ghost wide">Réinitialiser les filtres</button>
@@ -181,6 +222,12 @@
             <div id="map"></div>
             <div class="map-overlay">
               <span id="map-caption">—</span>
+            </div>
+            <div class="live-panel" id="live-panel" hidden>
+              <span class="live-dot" aria-hidden="true"></span>
+              <b id="live-count">0</b> aéronefs
+              <span class="muted" id="live-provider"></span>
+              <span class="muted" id="live-ago"></span>
             </div>
           </div>
 
@@ -397,6 +444,14 @@
             <strong>Cumuler plusieurs jours</strong> : relancez un import en choisissant la
             destination « Ajouter au jeu de données actif » — les positions et la couverture
             temporelle s'additionnent (voir §3 bis du README pour les volumes réalistes).
+          </li>
+          <li>
+            <strong>Temps réel</strong> : cliquez sur « Activer » dans la carte « Temps réel » —
+            les positions réelles des aéronefs autour du centre de la carte sont téléchargées
+            directement depuis les API ADS-B publiques (adsb.lol, airplanes.live, adsb.fi,
+            OpenSky), sans aucune archive. Cochez « Enregistrer pour l'historique » pour
+            constituer votre propre historique au fil du temps, puis « Ouvrir l'historique
+            enregistré » pour l'interroger comme n'importe quel jeu de données.
           </li>
           <li>
             <strong>Requêter</strong> : choisissez une zone (bouton « Dessiner » ou zone

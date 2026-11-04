@@ -52,6 +52,34 @@ jours parce qu'elle est simulée ; vos imports réels peuvent couvrir plusieurs 
 
 ---
 
+## 2 bis. Voir les données réelles tout de suite (temps réel, sans archive)
+
+Carte **« 5 · Temps réel »** dans la barre latérale :
+
+1. cadrez la zone qui vous intéresse sur la carte (bouton **Dakar** pour y aller directement) ;
+2. choisissez un **rayon** (10 à 250 NM) et un **rafraîchissement** (5 à 60 s) ;
+3. cliquez sur **Activer**.
+
+L'application interroge alors directement les **API ADS-B publiques** — `adsb.lol`,
+`airplanes.live`, `adsb.fi`, puis `OpenSky` en dernier recours — et affiche les aéronefs réels
+autour du centre de la carte : positions, indicatifs, altitudes, vitesses, traînées accumulées
+pendant la session. Aucun téléchargement, aucune archive, aucune clé d'API.
+
+**Construire de l'historique réel** : cochez *« Enregistrer pour l'historique »* et laissez
+l'onglet ouvert. Les positions reçues s'accumulent localement (1 point / 10 s et par aéronef,
+plafond 250 000 points). Le bouton *« Ouvrir l'historique enregistré »* transforme cet
+enregistrement en jeu de données interrogeable comme n'importe quel autre (filtres, carte,
+tableaux, export CSV) — vous pouvez donc constituer votre propre historique de votre région,
+jour après jour, sans jamais télécharger d'archive.
+
+> ⚠️ Ces API sont publiques et gratuites : gardez un rafraîchissement raisonnable (10–30 s) et
+> un seul onglet à la fois. Certains réseaux d'entreprise, filtres DNS ou bloqueurs de
+> publicité bloquent ces domaines — l'application essaie alors les quatre fournisseurs et
+> affiche un message explicite si aucun n'est joignable. L'onglet en arrière-plan met la
+> surveillance en pause automatiquement.
+
+---
+
 ## 3. Importer de vraies données ADS-B
 
 ### 3.0 D'où viennent les données ?
@@ -160,6 +188,7 @@ Règles pratiques :
 | **Détail** | panneau par aéronef : métadonnées, statistiques, profil d'altitude, isolement du vol |
 | **Chronologie** | histogramme des positions et du nombre d'aéronefs dans la sélection |
 | **Export** | CSV des positions filtrées et CSV de la synthèse par aéronef |
+| **Temps réel** | ingestion directe des API ADS-B publiques (4 fournisseurs en cascade), traînées et enregistrement local |
 | **Cumul** | import jour par jour fusionné dans un même jeu de données (couverture multi-jours) |
 | **Import URL** | téléchargement + décodage en flux d'une archive depuis son adresse (si CORS autorisé) |
 | **Stockage** | jeux de données importés conservés localement (IndexedDB), suppression possible |

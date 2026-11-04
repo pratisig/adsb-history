@@ -10,6 +10,7 @@ import path from 'node:path';
 import { readTarStream, parseHeatmapBuffer, parseCsv } from '../assets/js/parse.js';
 import { datasetFromDemoJson, datasetFromRows, describeDataset, mergeDatasets } from '../assets/js/dataset.js';
 import { queryDataset, aggregateByAircraft, buildTimeline, resultsToCsv } from '../assets/js/query.js';
+import { normalizeAircraft, parseAcList, parseOpenSky, bboxAround, fetchLive } from '../assets/js/live.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 let failures = 0;
@@ -261,6 +262,84 @@ async function main() {
       'positions du flux identiques à celles du fichier',
       done.dataset.dicts.hex.length === 3 && done.dataset.dicts.flight.includes('SZN204')
     );
+  }
+
+  console.log('\nIngestion en direct (API ADS-B publiques)');
+  {
+    const adsblol = {
+      ac: [
+        {
+          hex: '0A0001',
+          flight: 'SZN204 ',
+          r: '6V-AMC',
+          t: 'A319',
+          alt_baro: 31000,
+          gs: 440.2,
+          track: 118.4,
+          lat: 14.7,
+          lon: -17.4,
+          category: 'A3',
+          dbFlags: 1,
+        },
+        { hex: '3c1234', lat: null, lon: null },
+      ],
+      total: 2,
+    };
+    const points = parseAcList(adsblol);
+    check('parse adsb.lol : aéronefs sans position ignorés', points.length === 1);
+    const p = points[0];
+    check('callsign normalisé', p.flight === 'SZN204');
+    check('altitude / vitesse / cap', p.alt === 31000 && Math.abs(p.gs - 440.2) < 1e-6 && Math.abs(p.bearing - 118.4) < 1e-6);
+    check('indicateur militaire (dbFlags)', p.military === true);
+    check('immatriculation et type', p.reg === '6V-AMC' && p.type === 'A319');
+    check('position au sol', normalizeAircraft({ hex: 'abcdef', lat: 1, lon: 2, alt_baro: 'ground' }).alt === -123);
+    check('aéronef sans position rejeté', normalizeAircraft({ hex: 'abcdef' }) === null);
+
+    const opensky = {
+      time: 1,
+      states: [
+        ['4ca7b3', 'RYR123 ', 'Ireland', 1690000000, 1690000000, -6.1, 50.1, 10000, false, 220.5, 90.0, 0, null, 10500, '1234', false, 0],
+      ],
+    };
+    const op = parseOpenSky(opensky);
+    check('parse OpenSky', op.length === 1 && op[0].hex === '4ca7b3');
+    check('conversion altitude mètres → pieds', Math.abs(op[0].alt - 32808.4) < 1);
+    check('conversion vitesse m/s → nœuds', Math.abs(op[0].gs - 428.6) < 1);
+    const b = bboxAround(14.74, -17.49, 60);
+    check(
+      'bornes géographiques autour d’un point',
+      b.lamin < 14.74 && b.lamax > 14.74 && b.lomin < -17.49 && b.lomax > -17.49
+    );
+
+    const urls = [];
+    const fetchStub = async (url) => {
+      urls.push(url);
+      return { ok: true, json: async () => adsblol };
+    };
+    const live = await fetchLive({ lat: 14.74, lon: -17.49, radiusNm: 60, fetchImpl: fetchStub });
+    check('fetchLive : fournisseur principal', live.providerId === 'adsblol' && live.points.length === 1);
+    check('fetchLive : URL de l’API', urls[0] === 'https://api.adsb.lol/v2/point/14.7400/-17.4900/60', urls[0]);
+
+    const flaky = async (url) => {
+      if (url.includes('adsb.lol')) throw new TypeError('Failed to fetch');
+      return { ok: true, json: async () => adsblol };
+    };
+    const fallback = await fetchLive({ lat: 14.74, lon: -17.49, radiusNm: 60, fetchImpl: flaky });
+    check('bascule automatique vers le fournisseur suivant', fallback.providerId === 'airplaneslive');
+
+    let message = '';
+    try {
+      await fetchLive({
+        lat: 14.74,
+        lon: -17.49,
+        fetchImpl: async () => {
+          throw new TypeError('blocked');
+        },
+      });
+    } catch (err) {
+      message = err.message;
+    }
+    check('message explicite si toutes les sources échouent', /Aucune source en direct/i.test(message), message.slice(0, 80));
   }
 
   console.log(failures ? `\n${failures} test(s) en échec\n` : '\nTous les tests passent\n');
