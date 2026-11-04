@@ -40,16 +40,22 @@ const DEFAULTS = {
 
 const R = (v, n) => (typeof v === 'number' && Number.isFinite(v) ? Number(v.toFixed(n)) : null);
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const out = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (!arg.startsWith('--')) continue;
-    const key = arg.slice(2);
+    const body = arg.slice(2);
+    const eq = body.indexOf('=');
+    if (eq > 0) {
+      // forme --clé=valeur (celle utilisée par le workflow)
+      out[body.slice(0, eq)] = body.slice(eq + 1);
+      continue;
+    }
     const next = argv[i + 1];
-    if (next === undefined || next.startsWith('--')) out[key] = true;
+    if (next === undefined || next.startsWith('--')) out[body] = true;
     else {
-      out[key] = next;
+      out[body] = next;
       i++;
     }
   }
@@ -209,8 +215,12 @@ export async function collect({
 
   for (let cycle = 0; cycle < cycles; cycle++) {
     const startedAt = Date.now();
-    const results = await Promise.all(zones.map((zone) => pollZone(zone)));
-    const t = Math.floor(startedAt / 1000);
+    const results = [];
+    for (let i = 0; i < zones.length; i++) {
+      if (i > 0) await new Promise((resolve) => setTimeout(resolve, 1200));
+      results.push(await pollZone(zones[i]));
+    }
+    const t = Math.floor(Date.now() / 1000);
 
     for (let i = 0; i < zones.length; i++) {
       const zone = zones[i];
