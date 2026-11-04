@@ -230,6 +230,39 @@ async function main() {
     check('requête sur le dataset importé', indices.length === 3, `obtenu ${indices.length}`);
   }
 
+  console.log('\nWorker d’import — flux direct (import depuis une URL)');
+  {
+    const messages = [];
+    globalThis.self.postMessage = (msg) => messages.push(msg);
+    const blob = new Blob([tarBuf]);
+    globalThis.self.onmessage({
+      data: {
+        type: 'start-stream',
+        stream: blob.stream(),
+        totalBytes: blob.size,
+        options: { bbox: null, minIntervalSec: 0, maxPoints: 1000 },
+      },
+    });
+    const done = await new Promise((resolve, reject) => {
+      const t0 = Date.now();
+      const poll = setInterval(() => {
+        const final = messages.find((m) => m.type === 'done' || m.type === 'error');
+        if (final) {
+          clearInterval(poll);
+          final.type === 'done' ? resolve(final) : reject(new Error(final.message));
+        } else if (Date.now() - t0 > 10000) {
+          clearInterval(poll);
+          reject(new Error('timeout du worker (flux)'));
+        }
+      }, 20);
+    });
+    check('dataset produit depuis un flux', done.count === expected.length, `obtenu ${done.count}`);
+    check(
+      'positions du flux identiques à celles du fichier',
+      done.dataset.dicts.hex.length === 3 && done.dataset.dicts.flight.includes('SZN204')
+    );
+  }
+
   console.log(failures ? `\n${failures} test(s) en échec\n` : '\nTous les tests passent\n');
   process.exit(failures ? 1 : 0);
 }
