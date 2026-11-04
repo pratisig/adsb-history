@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Turnstone Lite — historique de vols ADS-B</title>
+    <meta
+      name="description"
+      content="Explorez, filtrez et exportez l'historique ADS-B des aéronefs directement dans votre navigateur, sans installation."
+    />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="assets/vendor/leaflet/leaflet.css" />
+    <link rel="stylesheet" href="assets/css/app.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <svg viewBox="0 0 24 24" aria-hidden="true" class="brand-logo">
+          <path
+            d="M12 2.2c.7 0 1.2.7 1.2 1.6v5.3l7.1 4.1v1.9l-7.1-2.1v5l2.4 1.8v1.6L12 20.6l-3.6 1v-1.6l2.4-1.8v-5l-7.1 2.1v-1.9l7.1-4.1V3.8c0-.9.5-1.6 1.2-1.6Z"
+          />
+        </svg>
+        <div>
+          <h1>Turnstone <span>Lite</span></h1>
+          <p>Historique de vols ADS-B · 100 % dans le navigateur</p>
+        </div>
+      </div>
+
+      <div class="dataset-picker">
+        <label for="dataset-select">Jeu de données</label>
+        <select id="dataset-select"></select>
+        <span id="dataset-badge" class="badge"></span>
+      </div>
+
+      <div class="spacer"></div>
+
+      <button id="btn-delete-dataset" class="btn ghost small" hidden title="Supprimer ce jeu de données">
+        Supprimer
+      </button>
+      <button id="btn-import" class="btn primary">
+        <span aria-hidden="true">＋</span> Importer des données
+      </button>
+      <button id="btn-help" class="btn ghost">Aide</button>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <section class="card">
+          <h2><span class="step">1</span> Zone géographique</h2>
+          <div class="row wrap">
+            <button class="btn small" id="zone-view">Zone visible</button>
+            <button class="btn small" id="zone-world">Monde</button>
+            <button class="btn small" id="zone-draw">Dessiner</button>
+            <button class="btn small ghost" id="zone-clear">Effacer</button>
+          </div>
+          <p class="hint" id="bbox-label">Monde entier</p>
+        </section>
+
+        <section class="card">
+          <h2><span class="step">2</span> Période <em>(UTC)</em></h2>
+          <div class="chips" id="period-chips">
+            <button data-hours="1">1 h</button>
+            <button data-hours="6">6 h</button>
+            <button data-hours="24">24 h</button>
+            <button data-all="1" class="active">Tout</button>
+          </div>
+          <label class="field">
+            <span>Du</span>
+            <input type="datetime-local" id="start-input" step="60" />
+          </label>
+          <label class="field">
+            <span>Au</span>
+            <input type="datetime-local" id="end-input" step="60" />
+          </label>
+        </section>
+
+        <section class="card">
+          <h2><span class="step">3</span> Aéronef</h2>
+          <label class="field">
+            <span>Code ICAO 24 bits (hex)</span>
+            <input type="text" id="hex-input" placeholder="ex. 6V0001" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>Indicatif / n° de vol</span>
+            <input type="text" id="flight-input" placeholder="ex. SZN204" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>Immatriculation</span>
+            <input type="text" id="reg-input" placeholder="ex. 6V-AMC" autocomplete="off" />
+          </label>
+        </section>
+
+        <section class="card">
+          <h2><span class="step">4</span> Filtres de vol</h2>
+          <div class="field-pair">
+            <label class="field">
+              <span>Altitude min (ft)</span>
+              <input type="number" id="min-alt" min="0" max="60000" step="500" placeholder="0" />
+            </label>
+            <label class="field">
+              <span>Altitude max (ft)</span>
+              <input type="number" id="max-alt" min="0" max="60000" step="500" placeholder="45000" />
+            </label>
+          </div>
+          <div class="field-pair">
+            <label class="field">
+              <span>Vitesse min (kt)</span>
+              <input type="number" id="min-gs" min="0" max="1200" step="10" placeholder="0" />
+            </label>
+            <label class="field">
+              <span>Vitesse max (kt)</span>
+              <input type="number" id="max-gs" min="0" max="1200" step="10" placeholder="700" />
+            </label>
+          </div>
+          <div class="field-pair">
+            <label class="field">
+              <span>Cap min (°)</span>
+              <input type="number" id="min-brg" min="0" max="360" step="5" placeholder="0" />
+            </label>
+            <label class="field">
+              <span>Cap max (°)</span>
+              <input type="number" id="max-brg" min="0" max="360" step="5" placeholder="360" />
+            </label>
+          </div>
+          <label class="field">
+            <span>Catégorie</span>
+            <select id="category-select">
+              <option value="">Toutes</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Statut</span>
+            <select id="military-select">
+              <option value="any">Tous les aéronefs</option>
+              <option value="yes">Militaires uniquement</option>
+              <option value="no">Civils uniquement</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Nombre maximal de positions</span>
+            <select id="limit-select">
+              <option value="25000">25 000</option>
+              <option value="100000">100 000</option>
+              <option value="500000" selected>500 000</option>
+              <option value="2000000">2 000 000</option>
+            </select>
+          </label>
+        </section>
+
+        <div class="sidebar-footer">
+          <button id="btn-search" class="btn primary wide">Rechercher</button>
+          <button id="btn-reset" class="btn ghost wide">Réinitialiser les filtres</button>
+        </div>
+      </aside>
+
+      <section class="results">
+        <div class="results-head">
+          <div class="summary" id="result-summary">
+            <span class="muted">Chargement de la démonstration…</span>
+          </div>
+          <nav class="tabs" id="tabs" role="tablist">
+            <button data-view="map" class="active" role="tab">Carte</button>
+            <button data-view="table" role="tab">Positions</button>
+            <button data-view="aircraft" role="tab">Aéronefs</button>
+            <button data-view="timeline" role="tab">Chronologie</button>
+          </nav>
+          <div class="head-actions">
+            <select id="basemap-select" title="Fond de carte">
+              <option value="dark">Fond sombre</option>
+              <option value="light">Fond clair</option>
+              <option value="sat">Satellite</option>
+              <option value="none">Aucun fond</option>
+            </select>
+            <button id="btn-export-positions" class="btn small">CSV positions</button>
+            <button id="btn-export-aircraft" class="btn small">CSV aéronefs</button>
+          </div>
+        </div>
+
+        <div class="views">
+          <div class="view active" id="view-map">
+            <div id="map"></div>
+            <div class="map-overlay">
+              <span id="map-caption">—</span>
+            </div>
+          </div>
+
+          <div class="view" id="view-table">
+            <div class="table-wrap">
+              <table class="grid" id="positions-table">
+                <thead>
+                  <tr>
+                    <th data-sort="t">Temps (UTC)</th>
+                    <th data-sort="hex">Hex</th>
+                    <th data-sort="flight">Vol</th>
+                    <th data-sort="alt">Altitude</th>
+                    <th data-sort="gs">Vitesse</th>
+                    <th data-sort="bearing">Cap</th>
+                    <th data-sort="lat">Latitude</th>
+                    <th data-sort="lon">Longitude</th>
+                    <th data-sort="registration">Immat.</th>
+                    <th data-sort="typecode">Type</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="pager" id="positions-pager"></div>
+          </div>
+
+          <div class="view" id="view-aircraft">
+            <div class="table-wrap">
+              <table class="grid" id="aircraft-table">
+                <thead>
+                  <tr>
+                    <th data-sort="callsign">Indicatif</th>
+                    <th data-sort="hex">Hex</th>
+                    <th data-sort="typecode">Type</th>
+                    <th data-sort="category">Catégorie</th>
+                    <th data-sort="count">Positions</th>
+                    <th data-sort="duration">Durée</th>
+                    <th data-sort="maxAlt">Alt. max</th>
+                    <th data-sort="avgGs">Vit. moy.</th>
+                    <th data-sort="distance">Distance</th>
+                    <th data-sort="firstT">Premier point</th>
+                    <th data-sort="lastT">Dernier point</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="pager" id="aircraft-pager"></div>
+          </div>
+
+          <div class="view" id="view-timeline">
+            <div class="chart-card">
+              <div class="chart-head">
+                <h3>Activité aérienne dans la sélection</h3>
+                <div class="chart-legend">
+                  <span class="lg positions"></span> positions
+                  <span class="lg aircraft"></span> aéronefs distincts
+                </div>
+              </div>
+              <div id="timeline-chart" class="chart"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="detail" id="detail" hidden>
+        <div class="detail-head">
+          <h2 id="detail-title">Aéronef</h2>
+          <button class="btn ghost small" id="detail-close" aria-label="Fermer">✕</button>
+        </div>
+        <div class="detail-body" id="detail-body"></div>
+      </aside>
+    </main>
+
+    <!-- Modale d'import -->
+    <dialog id="import-dialog" class="modal">
+      <form method="dialog" class="modal-inner">
+        <h2>Importer un historique ADS-B</h2>
+        <p class="muted">
+          Déposez une archive <strong>tar</strong> de <em>globe_history</em> (adsb.lol),
+          une archive découpée (<code>.tar.aa</code>, <code>.tar.ab</code>…) ou un
+          fichier <strong>CSV</strong>. Tout est décodé localement : aucun fichier n'est
+          envoyé sur un serveur.
+        </p>
+
+        <div id="drop-zone" class="drop-zone">
+          <p>Glissez vos fichiers ici</p>
+          <p class="muted">ou</p>
+          <label class="btn small">
+            Choisir des fichiers
+            <input type="file" id="file-input" multiple accept=".tar,.aa,.ab,.ac,.ad,.csv,.txt" hidden />
+          </label>
+          <p class="hint" id="file-list">Aucun fichier sélectionné</p>
+        <p class="hint">
+          Archives officielles :
+          <a href="https://github.com/adsblol/globe_history_2025/releases" target="_blank" rel="noreferrer"
+            >releases adsb.lol (globe_history)</a
+          >
+        </p>
+        </div>
+
+        <div class="field-pair">
+          <label class="field">
+            <span>Zone à importer</span>
+            <select id="import-zone">
+              <option value="view">Zone visible de la carte</option>
+              <option value="world">Monde entier</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Échantillonnage</span>
+            <select id="import-sampling">
+              <option value="30">1 point / 30 s</option>
+              <option value="60" selected>1 point / 60 s (comme Turnstone)</option>
+              <option value="120">1 point / 2 min</option>
+              <option value="300">1 point / 5 min</option>
+            </select>
+          </label>
+        </div>
+        <div class="field-pair">
+          <label class="field">
+            <span>Destination</span>
+            <select id="import-target">
+              <option value="new">Nouveau jeu de données</option>
+              <option value="merge">Ajouter au jeu de données actif</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Limite de positions</span>
+            <select id="import-limit">
+              <option value="250000">250 000</option>
+              <option value="750000" selected>750 000</option>
+              <option value="2000000">2 000 000</option>
+              <option value="5000000">5 000 000</option>
+            </select>
+          </label>
+        </div>
+        <p class="hint" id="import-estimate">—</p>
+        <p class="hint">
+          Une journée mondiale complète pèse ~3 Go compressés : limitez la zone à votre
+          région et gardez 1 point/minute. Pour couvrir plusieurs jours, importez-les
+          successivement avec « Ajouter au jeu de données actif ».
+        </p>
+
+        <div class="progress" id="import-progress" hidden>
+          <div class="progress-bar"><div id="import-progress-fill"></div></div>
+          <p class="hint" id="import-progress-label">Préparation…</p>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" id="import-cancel">Annuler</button>
+          <button type="button" class="btn primary" id="import-start" disabled>Lancer l'import</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Modale d'aide -->
+    <dialog id="help-dialog" class="modal">
+      <div class="modal-inner">
+        <h2>Mode d'emploi</h2>
+        <ol class="help-list">
+          <li>
+            <strong>Données de démonstration</strong> : au chargement, un jeu de données
+            simulé de 3 jours (28 → 30/10/2026, Afrique de l'Ouest) permet d'essayer l'outil
+            immédiatement. La période proposée s'étend toujours sur toute la couverture des
+            données chargées.
+          </li>
+          <li>
+            <strong>Importer de vraies données</strong> : téléchargez une archive
+            <em>globe_history</em> depuis
+            <a href="https://github.com/adsblol/globe_history_2025/releases" target="_blank" rel="noreferrer"
+              >les releases adsb.lol</a
+            >, puis cliquez sur « Importer des données ». L'archive est lue en flux,
+            sans être envoyée nulle part.
+          </li>
+          <li>
+            <strong>Cumuler plusieurs jours</strong> : relancez un import en choisissant la
+            destination « Ajouter au jeu de données actif » — les positions et la couverture
+            temporelle s'additionnent (voir §3 bis du README pour les volumes réalistes).
+          </li>
+          <li>
+            <strong>Requêter</strong> : choisissez une zone (bouton « Dessiner » ou zone
+            visible), une période, éventuellement un hex/indicatif, puis « Rechercher ».
+          </li>
+          <li>
+            <strong>Explorer</strong> : cliquez sur un point d'extrémité sur la carte ou
+            sur une ligne du tableau « Aéronefs » pour voir la trace complète et les
+            statistiques du vol.
+          </li>
+          <li>
+            <strong>Exporter</strong> : les boutons « CSV positions » et « CSV aéronefs »
+            téléchargent les résultats filtrés.
+          </li>
+        </ol>
+        <p class="hint">
+          Les données sont conservées dans le navigateur (IndexedDB) sur votre appareil.
+          Aucun compte, aucun serveur, aucune clé API.
+        </p>
+        <div class="modal-actions">
+          <button type="button" class="btn primary" id="help-close">Compris</button>
+        </div>
+      </div>
+    </dialog>
+
+    <div id="toasts" class="toasts"></div>
+    <div id="loading" class="loading" hidden><div class="spinner"></div><p>Analyse…</p></div>
+
+    <script src="assets/vendor/leaflet/leaflet.js"></script>
+    <script type="module" src="assets/js/app.js"></script>
+  </body>
+</html>
