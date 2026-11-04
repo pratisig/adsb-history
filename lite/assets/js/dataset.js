@@ -152,6 +152,59 @@ export function datasetFromDemoJson(json) {
   return { meta: { ...meta, count: n }, n, columns, dicts: dict };
 }
 
+/**
+ * Fusionne deux jeux de données (ex. import jour par jour).
+ * Les dictionnaires de chaînes sont fusionnés et les index remappés.
+ */
+export function mergeDatasets(a, b) {
+  const dicts = {};
+  const remap = {};
+  for (const key of DICTS) {
+    const merged = [...a.dicts[key]];
+    const index = new Map(merged.map((v, i) => [v, i]));
+    const map = new Uint32Array(b.dicts[key].length);
+    for (let i = 0; i < b.dicts[key].length; i++) {
+      const value = b.dicts[key][i];
+      if (index.has(value)) {
+        map[i] = index.get(value);
+      } else {
+        const id = merged.length;
+        merged.push(value);
+        index.set(value, id);
+        map[i] = id;
+      }
+    }
+    dicts[key] = merged;
+    remap[key] = map;
+  }
+
+  const n1 = a.n;
+  const n2 = b.n;
+  const n = n1 + n2;
+  const out = {};
+  for (const field of ['t', 'lat', 'lon', 'alt', 'gs', 'brg']) {
+    const Ctor = a.columns[field].constructor;
+    const arr = new Ctor(n);
+    arr.set(a.columns[field], 0);
+    arr.set(b.columns[field], n1);
+    out[field] = arr;
+  }
+  const mapIndex = { h: 'hex', f: 'flight', r: 'reg', ty: 'type', c: 'cat' };
+  for (const [field, dictKey] of Object.entries(mapIndex)) {
+    const arr = new Uint32Array(n);
+    arr.set(a.columns[field], 0);
+    const map = remap[dictKey];
+    for (let i = 0; i < n2; i++) arr[n1 + i] = map[b.columns[field][i]];
+    out[field] = arr;
+  }
+  const mil = new Uint8Array(n);
+  mil.set(a.columns.mil, 0);
+  mil.set(b.columns.mil, n1);
+  out.mil = mil;
+
+  return { meta: { ...a.meta, ...b.meta }, n, columns: out, dicts };
+}
+
 /** Statistiques générales sur un dataset. */
 export function describeDataset(ds) {
   const { t, h, c, mil } = ds.columns;

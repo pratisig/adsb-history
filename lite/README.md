@@ -34,13 +34,17 @@ Puis ouvrez <http://localhost:8000>. Sur Windows : `py -m http.server 8000 --dir
 
 ## 2. Ce que vous voyez au premier lancement
 
-Un jeu de données **de démonstration** (journée du 28/10/2026, Dakar et Afrique de l'Ouest,
-plus quelques survols long-courriers) est livré avec l'application pour que tout soit
-explorable immédiatement.
+Un jeu de données **de démonstration** de **3 jours** (28 → 30/10/2026, Dakar et Afrique de
+l'Ouest, plus quelques survols long-courriers) est livré avec l'application : 100 000 positions,
+450 aéronefs, explorable immédiatement.
 
 ⚠️ Ces données de démonstration sont **simulées** (elles imitent un trafic plausible et le
-format exact de Turnstone, mais ne proviennent pas de vrais relevés). Le badge `DÉMO` et le
-bandeau de l'interface le rappellent. Importez vos propres données pour travailler sur du réel.
+format exact de Turnstone, mais ne proviennent pas de vrais relevés). Le badge `démo simulée`
+le rappelle. Importez vos propres données pour travailler sur du réel.
+
+La fenêtre temporelle de l'outil n'est **pas** limitée à 24 h : la période proposée s'étend
+toujours sur toute la couverture du jeu de données chargé (« Tout »). La démo ne fait que 3
+jours parce qu'elle est simulée ; vos imports réels peuvent couvrir plusieurs semaines (§3.3).
 
 ---
 
@@ -70,12 +74,48 @@ millions de positions — trop pour un navigateur. Limitez la zone (un pays, une
 1 point/minute : vous obtenez quelques dizaines de milliers de positions, très confortables.
 Utilisez la limite de positions pour être averti avant de saturer la mémoire.
 
-### 3.2 CSV
+### 3.2 Importer plusieurs jours (cumul)
+
+Un import = un **jeu de données**. Pour couvrir plusieurs jours, importez-les à la suite en
+choisissant, dans la fenêtre d'import, la destination **« Ajouter au jeu de données actif »** :
+le nouvel extrait est fusionné dans le jeu courant (les positions, la couverture temporelle et
+la liste des aéronefs s'additionnent), et le tout est ré-enregistré localement.
+
+Vous pouvez aussi sélectionner **plusieurs archives d'un coup** (jours différents, ou morceaux
+`aa/ab/ac…` d'une même journée) : elles sont lues à la suite dans le même flux.
+
+### 3.3 CSV
 
 N'importe quel CSV contenant au minimum `lat`/`latitude` et `lon`/`longitude` est accepté.
 Les colonnes reconnues (alias multiples) : `t`/`time`/`timestamp`, `hex`/`icao24`,
 `flight`/`callsign`, `alt`/`altitude`, `gs`/`speed`/`velocity`, `track`/`bearing`,
 `registration`, `typecode`/`type`, `category`, `military`.
+
+---
+
+## 3 bis. Combien d'historique puis-je charger ?
+
+Le navigateur travaille **en mémoire** : il faut donc arbitrer entre *durée*, *zone* et
+*résolution temporelle*. Ordres de grandeur mesurés avec cet outil :
+
+| Ce que vous chargez | Positions | Mémoire | Usage |
+| --- | --- | --- | --- |
+| Démo (3 jours, Afrique de l'Ouest) | 100 000 | ~60 Mo | découverte |
+| 1 journée, un pays, 1 point/min | 20 000 – 80 000 | ~10 Mo | analyse fine |
+| 1 semaine, un pays, 1 point/min | 150 000 – 500 000 | ~40 Mo | suivi d'un aéronef |
+| 1 mois, une région, 1 point/5 min | 300 000 – 1 000 000 | ~50 Mo | tendances |
+| 1 journée **mondiale** complète (adsb.lol) | 10 – 20 millions | plusieurs Go | ✗ impossible dans un navigateur |
+
+Autrement dit : **un extrait régional sur plusieurs semaines, oui ; la totalité de l'historique
+mondial, non.** Pour cela il faut une vraie base de données — c'est exactement le rôle du
+backend PostgreSQL/PostGIS de Turnstone (`backend-data-loading/` + `backend-api/`).
+
+Règles pratiques :
+
+- importez **une zone** (bouton « Dessiner » ou « zone visible ») plutôt que le monde entier ;
+- baissez la résolution (1 point/2 min ou /5 min) pour couvrir plus longtemps ;
+- la limite de positions de la fenêtre d'import (jusqu'à 5 M) borne la mémoire utilisée ;
+- les jeux de données fusionnés restent dans IndexedDB : ~50 Mo pour 1 M de positions.
 
 ---
 
@@ -92,6 +132,7 @@ Les colonnes reconnues (alias multiples) : `t`/`time`/`timestamp`, `hex`/`icao24
 | **Détail** | panneau par aéronef : métadonnées, statistiques, profil d'altitude, isolement du vol |
 | **Chronologie** | histogramme des positions et du nombre d'aéronefs dans la sélection |
 | **Export** | CSV des positions filtrées et CSV de la synthèse par aéronef |
+| **Cumul** | import jour par jour fusionné dans un même jeu de données (couverture multi-jours) |
 | **Stockage** | jeux de données importés conservés localement (IndexedDB), suppression possible |
 
 Tout est calculé côté client : `filtrage → agrégation → rendu` en quelques dizaines de
@@ -120,7 +161,8 @@ résultats ; pour des mois de données et des requêtes lourdes, utilisez le Tur
 Tous les chemins sont relatifs : le dossier `lite/` fonctionne à la racine d'un domaine comme
 dans un sous-dossier.
 
-- **GitHub Pages** : *Settings → Pages → Deploy from a branch*, dossier `/lite` (branche `main`).
+- **GitHub Pages** : *Settings → Pages → Deploy from a branch*, branche + dossier `/lite`.
+  Sur ce fork, la page est déjà publiée : **<https://pratisig.github.io/adsb-history/>**.
 - **Netlify / Cloudflare Pages** : *publish directory* = `lite`.
 - **Vercel** : `vercel --cwd lite` ou import du dépôt avec *Root Directory* = `lite`,
   framework *Other*, aucune commande de build.

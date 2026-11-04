@@ -6,6 +6,7 @@ import {
   datasetFromDemoJson,
   datasetFromRows,
   describeDataset,
+  mergeDatasets,
   formatAlt,
   formatTime,
   formatDuration,
@@ -197,7 +198,12 @@ async function loadDemo() {
 
 async function refreshDatasetList() {
   const imported = await dbAll('datasets').catch(() => []);
-  state.datasets = [{ id: 'demo', name: 'Démo · Dakar & Afrique de l’Ouest', source: 'demo' }, ...imported];
+  const demoEntry = {
+    id: 'demo',
+    name: (state.cache.get('demo') || {}).meta?.name || 'Démonstration',
+    source: 'demo',
+  };
+  state.datasets = [demoEntry, ...imported];
   const select = $('#dataset-select');
   select.innerHTML = '';
   for (const d of state.datasets) {
@@ -727,6 +733,22 @@ function showDetail(ac) {
 /* Import                                                                      */
 /* -------------------------------------------------------------------------- */
 
+function refreshImportOptions() {
+  const target = $('#import-target');
+  const canMerge = !!state.active && !(state.meta && state.meta.synthetic);
+  target.querySelector('option[value="merge"]').disabled = !canMerge;
+  if (!canMerge) target.value = 'new';
+  target.querySelector('option[value="merge"]').textContent = canMerge
+    ? `Ajouter au jeu actif (${nf.format(state.stats.count)} positions)`
+    : 'Ajouter au jeu actif (indisponible avec la démo)';
+
+  const limit = Number($('#import-limit').value);
+  const mo = Math.round((limit * 60) / 1e6);
+  $('#import-estimate').textContent =
+    `Jusqu'à ${nf.format(limit)} positions dans ce lot ≈ ${mo} Mo de mémoire du navigateur ` +
+    `(les jeux de données fusionnés s'additionnent).`;
+}
+
 function setImportFiles(files) {
   state.importFiles = [...files];
   const total = state.importFiles.reduce((s, f) => s + f.size, 0);
@@ -787,11 +809,25 @@ async function startImport() {
 
     if (!ds.n) throw new Error("Aucune position ADS-B n'a été trouvée dans ces fichiers.");
 
+    let target = $('#import-target').value;
+    if (target === 'merge' && !state.active) target = 'new';
+    if (target === 'merge' && state.meta && state.meta.synthetic) target = 'new';
+    if (target === 'merge') {
+      label.textContent = 'Fusion avec le jeu de données actif…';
+      const before = state.active;
+      const beforeId = state.activeId;
+      const beforeMeta = { ...state.meta };
+      ds = mergeDatasets(before, ds);
+      name = `${beforeMeta.name} + ${name}`;
+      state.pendingMergeId = beforeId;
+      state.pendingMergeMeta = beforeMeta;
+    }
+
     const stats = describeDataset(ds);
-    const id = `imp-${Date.now()}`;
+    const id = target === 'merge' ? state.pendingMergeId : `imp-${Date.now()}`;
     const meta = {
       id,
-      name: name.length > 60 ? `${name.slice(0, 57)}…` : name,
+      name: name.length > 70 ? `${name.slice(0, 67)}…` : name,
       source: isCsv ? 'csv' : 'heatmap',
       synthetic: false,
       count: stats.count,
@@ -799,7 +835,7 @@ async function startImport() {
       tMin: stats.tMin,
       tMax: stats.tMax,
       importedAt: Date.now(),
-      bbox,
+      bbox: target === 'merge' ? (state.pendingMergeMeta.bbox ?? bbox) : bbox,
     };
 
     label.textContent = 'Enregistrement local (IndexedDB)…';
@@ -809,7 +845,9 @@ async function startImport() {
       toast("Jeu de données trop volumineux pour être conservé après rechargement : il reste disponible pour cette session.", 'error');
     }
 
-    state.datasets.push(meta);
+    const existing = state.datasets.findIndex((d) => d.id === id);
+    if (existing >= 0) state.datasets[existing] = meta;
+    else state.datasets.push(meta);
     state.cache.set(id, { ds, meta, stats });
     await refreshDatasetList();
     closeModal('#import-dialog');
@@ -818,7 +856,13 @@ async function startImport() {
     fill.style.width = '0%';
     $('#import-start').disabled = false;
     await activateDataset(id);
-    toast(`Import terminé : ${nf.format(stats.count)} positions, ${nf.format(stats.aircraft)} aéronefs.`);
+    toast(
+      `${target === 'merge' ? 'Fusion terminée' : 'Import terminé'} : ${nf.format(
+        stats.count
+      )} positions, ${nf.format(stats.aircraft)} aéronefs, ${formatTime(stats.tMin)} → ${formatTime(
+        stats.tMax
+      )} UTC.`
+    );
   } catch (err) {
     progress.hidden = true;
     fill.style.width = '0%';
@@ -877,7 +921,10 @@ function runWorkerImport(files, options, onProgress) {
 /* -------------------------------------------------------------------------- */
 
 function bindEvents() {
-  $('#btn-import').onclick = () => openModal('#import-dialog');
+  $('#btn-import').onclick = () => {
+    refreshImportOptions();
+    openModal('#import-dialog');
+  };
   $('#btn-help').onclick = () => openModal('#help-dialog');
   $('#help-close').onclick = () => closeModal('#help-dialog');
 
@@ -1003,6 +1050,7 @@ function bindEvents() {
 
   // import
   $('#file-input').onchange = (e) => setImportFiles(e.target.files);
+  $('#import-limit').onchange = refreshImportOptions;
   $('#import-start').onclick = startImport;
   $('#import-cancel').onclick = () => {
     if (state.worker) {
@@ -1061,7 +1109,6 @@ async function init() {
   try {
     const demo = await loadDemo();
     state.cache.set('demo', demo);
-    state.datasets = [{ id: 'demo', name: 'Démo · Dakar & Afrique de l’Ouest', source: 'demo' }];
     await refreshDatasetList();
     await activateDataset('demo');
     mapView.map.fitBounds(

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { readTarStream, parseHeatmapBuffer, parseCsv } from '../assets/js/parse.js';
-import { datasetFromDemoJson, datasetFromRows, describeDataset } from '../assets/js/dataset.js';
+import { datasetFromDemoJson, datasetFromRows, describeDataset, mergeDatasets } from '../assets/js/dataset.js';
 import { queryDataset, aggregateByAircraft, buildTimeline, resultsToCsv } from '../assets/js/query.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -119,7 +119,7 @@ async function main() {
     const ds = datasetFromDemoJson(raw);
     const stats = describeDataset(ds);
     check('dataset chargé', ds.n === raw.rows.length && ds.n > 1000);
-    check('couverture temporelle de 24 h', stats.tMax - stats.tMin > 20 * 3600);
+    check('couverture temporelle de plusieurs jours', stats.tMax - stats.tMin > 48 * 3600);
 
     const all = queryDataset(ds, { limit: 1e6 });
     check('requête sans filtre = toutes les positions', all.indices.length === ds.n);
@@ -141,10 +141,29 @@ async function main() {
 
     const timeline = buildTimeline(ds, all.indices, {});
     const total = timeline.bins.reduce((s, b) => s + b.positions, 0);
-    check('histogramme temporel', Math.abs(total - ds.n) < 1e-6 && timeline.bins.length >= 20, `${timeline.bins.length} bins`);
+    check('histogramme temporel', Math.abs(total - ds.n) < 1e-6 && timeline.bins.length >= 10, `${timeline.bins.length} bins`);
 
     const csv = resultsToCsv(ds, all.indices.slice(0, 10));
     check('export CSV', csv.split('\n').length === 11 && csv.includes('2026-10-28T'));
+
+    // fusion de deux jeux de données (import multi-jours)
+    {
+      const a = datasetFromDemoJson(raw);
+      const half = Math.floor(a.n / 2);
+      const cut = {
+        meta: { ...a.meta },
+        n: half,
+        columns: Object.fromEntries(Object.entries(a.columns).map(([k, v]) => [k, v.slice(0, half)])),
+        dicts: a.dicts,
+      };
+      const merged = mergeDatasets(cut, a);
+      check('fusion : total des positions', merged.n === half + a.n, `${merged.n}`);
+      check('fusion : dictionnaires cohérents', merged.dicts.hex.length === a.dicts.hex.length);
+      const res = queryDataset(merged, { limit: 1e6 });
+      check('fusion : requête sur le jeu fusionné', res.indices.length === merged.n);
+      const agg = aggregateByAircraft(merged, res.indices);
+      check('fusion : agrégation sur le jeu fusionné', agg.length === aircraft.length);
+    }
 
     const callSign = aircraft[0].callsign;
     const byFlight = queryDataset(ds, { flight: callSign, limit: 1e6 });

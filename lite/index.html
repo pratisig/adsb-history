@@ -140,8 +140,8 @@
             <span>Nombre maximal de positions</span>
             <select id="limit-select">
               <option value="25000">25 000</option>
-              <option value="100000" selected>100 000</option>
-              <option value="500000">500 000</option>
+              <option value="100000">100 000</option>
+              <option value="500000" selected>500 000</option>
               <option value="2000000">2 000 000</option>
             </select>
           </label>
@@ -300,17 +300,29 @@
             </select>
           </label>
         </div>
-        <label class="field">
-          <span>Limite de positions en mémoire</span>
-          <select id="import-limit">
-            <option value="250000">250 000</option>
-            <option value="750000" selected>750 000</option>
-            <option value="2000000">2 000 000</option>
-          </select>
-        </label>
+        <div class="field-pair">
+          <label class="field">
+            <span>Destination</span>
+            <select id="import-target">
+              <option value="new">Nouveau jeu de données</option>
+              <option value="merge">Ajouter au jeu de données actif</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Limite de positions</span>
+            <select id="import-limit">
+              <option value="250000">250 000</option>
+              <option value="750000" selected>750 000</option>
+              <option value="2000000">2 000 000</option>
+              <option value="5000000">5 000 000</option>
+            </select>
+          </label>
+        </div>
+        <p class="hint" id="import-estimate">—</p>
         <p class="hint">
-          Astuce : pour une journée mondiale complète (plusieurs Go), limitez la zone à
-          votre région et gardez 1 point/minute — l'import reste fluide.
+          Une journée mondiale complète pèse ~3 Go compressés : limitez la zone à votre
+          région et gardez 1 point/minute. Pour couvrir plusieurs jours, importez-les
+          successivement avec « Ajouter au jeu de données actif ».
         </p>
 
         <div class="progress" id="import-progress" hidden>
@@ -332,8 +344,9 @@
         <ol class="help-list">
           <li>
             <strong>Données de démonstration</strong> : au chargement, un jeu de données
-            simulé (journée du 28/10/2026, Afrique de l'Ouest) permet d'essayer l'outil
-            immédiatement.
+            simulé de 3 jours (28 → 30/10/2026, Afrique de l'Ouest) permet d'essayer l'outil
+            immédiatement. La période proposée s'étend toujours sur toute la couverture des
+            données chargées.
           </li>
           <li>
             <strong>Importer de vraies données</strong> : téléchargez une archive
@@ -342,6 +355,11 @@
               >les releases adsb.lol</a
             >, puis cliquez sur « Importer des données ». L'archive est lue en flux,
             sans être envoyée nulle part.
+          </li>
+          <li>
+            <strong>Cumuler plusieurs jours</strong> : relancez un import en choisissant la
+            destination « Ajouter au jeu de données actif » — les positions et la couverture
+            temporelle s'additionnent (voir §3 bis du README pour les volumes réalistes).
           </li>
           <li>
             <strong>Requêter</strong> : choisissez une zone (bouton « Dessiner » ou zone

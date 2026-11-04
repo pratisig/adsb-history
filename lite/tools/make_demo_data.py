@@ -320,7 +320,7 @@ def build_local_pattern(flight_no, country, typecode, origin, start, minutes, ra
     return rows
 
 
-def build_grid_survey(flight_no, country, typecode, start, hexcode=None, regcode=None):
+def build_grid_survey(flight_no, country, typecode, start, hexcode=None, regcode=None, step=60):
     """Avion de relevé (photogrammétrie) : serpentin au-dessus de Dakar."""
     lat0, lon0 = 14.72, -17.20
     hexcode = hexcode or make_hex(country)
@@ -344,11 +344,16 @@ def build_grid_survey(flight_no, country, typecode, start, hexcode=None, regcode
                              bearing=brg, reg=regcode, type=typecode,
                              cat=TYPES[typecode][0], mil=False))
             prev = (lat, lon)
-            t += timedelta(seconds=60)
+            t += timedelta(seconds=step)
     return rows
 
 
-def main():
+DAYS = 3  # nombre de jours simulés
+
+
+def build_day_rows(day_start, step_scale=1.0, seed=20261028):
+    """Construit un jour de trafic simulé."""
+    random.seed(seed)
     rows = []
     used = set()
 
@@ -367,8 +372,8 @@ def main():
         for _ in range(nb):
             dep, arr = random.sample(routes, 2)
             typecode = random.choice(fleet)
-            dep_time = DAY_START + timedelta(minutes=random.uniform(0, 1439))
-            step = random.choice([60, 60, 60, 45, 90])
+            dep_time = day_start + timedelta(minutes=random.uniform(0, 1439))
+            step = int(random.choice([60, 60, 60, 45, 90]) * step_scale)
             rows.extend(
                 build_flight(
                     unique_flight(airline), airline, country, typecode, dep, arr,
@@ -391,7 +396,7 @@ def main():
                 typecode=random.choice(["C25A", "GLF6", "E55P"]),
                 dep=route[0],
                 arr=route[1],
-                dep_time=DAY_START + timedelta(minutes=random.uniform(300, 1200)),
+                dep_time=day_start + timedelta(minutes=random.uniform(300, 1200)),
                 step=90,
             )
         )
@@ -401,17 +406,19 @@ def main():
         rows.extend(build_local_pattern(unique_flight("HB"), "Sénégal",
                                         random.choice(["C172", "P28A", "SR22", "BE20"]),
                                         random.choice(["DKR", "DSS"]),
-                                        DAY_START + timedelta(minutes=random.uniform(420, 1080)),
+                                        day_start + timedelta(minutes=random.uniform(420, 1080)),
                                         random.randint(35, 110),
                                         radius_km=random.uniform(8, 45),
-                                        alt_max=random.randint(1800, 9500)))
+                                        alt_max=random.randint(1800, 9500),
+                                        step=int(45 * step_scale)))
 
     # 4. Hélicoptères
     for _ in range(3):
         rows.extend(build_local_pattern(unique_flight("HEL"), "Sénégal",
                                         random.choice(["R44", "H125"]), "DKR",
-                                        DAY_START + timedelta(minutes=random.uniform(480, 1020)),
-                                        random.randint(25, 60), radius_km=18, alt_max=2200, step=60))
+                                        day_start + timedelta(minutes=random.uniform(480, 1020)),
+                                        random.randint(25, 60), radius_km=18, alt_max=2200,
+                                        step=int(60 * step_scale)))
 
     # 5. Militaires
     mil_specs = [
@@ -422,34 +429,49 @@ def main():
     ]
     for typecode, origin, start_min, minutes, alt in mil_specs:
         rows.extend(build_local_pattern(unique_flight("CTM"), "France", typecode, origin,
-                                        DAY_START + timedelta(minutes=start_min),
+                                        day_start + timedelta(minutes=start_min),
                                         minutes, radius_km=random.uniform(30, 120),
-                                        alt_max=alt, mil=True, step=60))
+                                        alt_max=alt, mil=True, step=int(60 * step_scale)))
     # patrouille sénégalaise + drone
     rows.extend(build_local_pattern("SEN01", "Sénégal", "M28", "DSS",
-                                    DAY_START + timedelta(minutes=520), 70,
-                                    radius_km=65, alt_max=7000, mil=True, step=60))
+                                    day_start + timedelta(minutes=520), 70,
+                                    radius_km=65, alt_max=7000, mil=True,
+                                    step=int(60 * step_scale)))
     rows.extend(build_local_pattern("SEN02", "Sénégal", "UAV", "DSS",
-                                    DAY_START + timedelta(minutes=610), 95,
-                                    radius_km=85, alt_max=11000, mil=True, step=60))
+                                    day_start + timedelta(minutes=610), 95,
+                                    radius_km=85, alt_max=11000, mil=True,
+                                    step=int(60 * step_scale)))
 
     # 6. Avion de relevé
     rows.extend(build_grid_survey("HB-SUR", "Sénégal", "C208",
-                                  DAY_START + timedelta(minutes=450)))
+                                  day_start + timedelta(minutes=450)))
 
     # 7. Trafic non-ICAO (TIS-B), hex précédés de "~"
     for _ in range(3):
         rows.extend(build_local_pattern(unique_flight("TIS"), "Sénégal",
                                         random.choice(["C172", "C208"]),
                                         random.choice(["DKR", "DSS"]),
-                                        DAY_START + timedelta(minutes=random.uniform(500, 1000)),
+                                        day_start + timedelta(minutes=random.uniform(500, 1000)),
                                         random.randint(20, 50), radius_km=25,
-                                        alt_max=3200, step=75))
+                                        alt_max=3200, step=int(75 * step_scale)))
 
-    # Ne garder que la journée de démonstration (les vols qui débordent sont tronqués)
-    rows.sort(key=lambda r: r["t"])
-    day_end = DAY_START + timedelta(days=1)
+    # Ne garder que la journée demandée (les vols qui débordent sont tronqués)
+    day_end = day_start + timedelta(days=1)
     rows = [r for r in rows if r["t"] < day_end.timestamp()]
+    return rows
+
+
+def main():
+    rows = []
+    for day_index in range(DAYS):
+        rows.extend(
+            build_day_rows(
+                DAY_START + timedelta(days=day_index),
+                step_scale=1.0 if day_index == 0 else 2.0,
+                seed=20261028 + day_index,
+            )
+        )
+    rows.sort(key=lambda r: r["t"])
 
     # Dictionnaires
     dicts = {k: [] for k in ("hex", "flight", "reg", "type", "cat")}
@@ -468,17 +490,17 @@ def main():
             r["bearing"], ids[2], ids[3], ids[4], 1 if r["mil"] else 0,
         ])
 
-    # Quelques hex "~" (non-ICAO) pour rester fidèle au format
     for i in range(0, len(dicts["hex"])):
         if random.random() < 0.03:
             dicts["hex"][i] = "~" + dicts["hex"][i]
 
     payload = {
         "meta": {
-            "name": "Démonstration — Dakar & Afrique de l'Ouest",
+            "name": f"Démonstration — Dakar & Afrique de l'Ouest ({DAYS} jours)",
             "source": "demo",
             "synthetic": True,
             "day": DAY_START.strftime("%Y-%m-%d"),
+            "days": DAYS,
             "note": "Données simulées à des fins de démonstration de l'interface.",
         },
         "dict": dicts,
@@ -488,7 +510,7 @@ def main():
     json.dump(payload, sys.stdout, separators=(",", ":"), ensure_ascii=False)
     sys.stderr.write(
         f"{len(out_rows)} positions, {len(set(r['hex'] for r in rows))} aéronefs, "
-        f"{n_flights + 9 + 7 + 3 + 6 + 3} vols environ\n"
+        f"{DAYS} jours\n"
     )
 
 
