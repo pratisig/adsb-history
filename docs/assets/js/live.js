@@ -152,6 +152,31 @@ export const PROVIDERS = [
   },
 ];
 
+/** Coût en crédits OpenSky d'une requête `states/all` selon la surface couverte. */
+export function openSkyCost(lat, radiusNm) {
+  const dLat = radiusNm / 60;
+  const dLon = dLat / Math.max(0.2, Math.cos((lat * Math.PI) / 180));
+  const area = 2 * dLat * 2 * dLon;
+  if (area <= 25) return 1;
+  if (area <= 100) return 2;
+  if (area <= 400) return 3;
+  return 4;
+}
+
+/** Crédits OpenSky anonymes disponibles par jour. */
+export const OPENSKY_DAILY_CREDITS = 400;
+
+/**
+ * Fournisseurs utilisables depuis un navigateur, par ordre de préférence.
+ * Seul OpenSky envoie `Access-Control-Allow-Origin: *`.
+ */
+export const BROWSER_PROVIDERS = [
+  PROVIDERS.find((p) => p.id === 'opensky'),
+  PROVIDERS.find((p) => p.id === 'adsblol'),
+  PROVIDERS.find((p) => p.id === 'airplaneslive'),
+  PROVIDERS.find((p) => p.id === 'adsbfi'),
+].filter(Boolean);
+
 /* -------------------------------------------------------------------------- */
 /* Relais CORS (facultatif)                                                   */
 /* -------------------------------------------------------------------------- */
