@@ -14,7 +14,16 @@ import {
 import { queryDataset, aggregateByAircraft, buildTimeline, resultsToCsv, aircraftToCsv } from './query.js';
 import { MapView, colorFor } from './mapview.js';
 import { parseCsv, parseHeatmapBuffer, readTarStream } from './parse.js';
-import { fetchLive, fetchSnapshot, fetchSnapshotIndex, snapshotTraffic, RELAYS } from './live.js';
+import {
+  fetchLive,
+  fetchSnapshot,
+  fetchSnapshotIndex,
+  snapshotTraffic,
+  RELAYS,
+  BROWSER_PROVIDERS,
+  openSkyCost,
+  OPENSKY_DAILY_CREDITS,
+} from './live.js';
 import { ColumnBuilder } from './dataset.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -1148,6 +1157,7 @@ async function loadSnapshot(zoneId = null) {
   } finally {
     snap.loading = false;
     updateSnapshotUi();
+    directIfSnapshotStale();
   }
 }
 
@@ -1196,6 +1206,35 @@ async function buildSnapshotDataset() {
 /* -------------------------------------------------------------------------- */
 
 const LIVE_TICK_MS = 1000;
+const CREDIT_KEY = 'turnstone.opensky.credits';
+
+/** Compteur local des crédits OpenSky consommés aujourd'hui (400 / jour en anonyme). */
+function creditState() {
+  const today = new Date().toISOString().slice(0, 10);
+  let stored = null;
+  try {
+    stored = JSON.parse(localStorage.getItem(CREDIT_KEY) || 'null');
+  } catch {
+    stored = null;
+  }
+  if (!stored || stored.date !== today) stored = { date: today, used: 0 };
+  return stored;
+}
+
+function spendCredits(amount) {
+  const credits = creditState();
+  credits.used += amount;
+  try {
+    localStorage.setItem(CREDIT_KEY, JSON.stringify(credits));
+  } catch {
+    /* mode privé : le compteur reste en mémoire */
+  }
+  return credits;
+}
+
+function remainingCredits() {
+  return Math.max(0, OPENSKY_DAILY_CREDITS - creditState().used);
+}
 
 function liveState() {
   if (!state.live) {
@@ -1205,7 +1244,7 @@ function liveState() {
       ticker: null,
       busy: false,
       radius: 50,
-      interval: 10,
+      interval: 300,
       recording: false,
       points: [],
       trails: new Map(),
@@ -1222,7 +1261,7 @@ function liveState() {
 function readLiveOptions() {
   const live = liveState();
   live.radius = Number($('#live-radius').value) || 50;
-  live.interval = Number($('#live-interval').value) || 10;
+  live.interval = Number($('#live-interval').value) || 300;
   return live;
 }
 
@@ -1239,10 +1278,23 @@ function updateLiveUi() {
 
   const status = $('#live-status');
   if (!live.active) {
-    status.textContent = live.rows.length
-      ? `Inactif · ${nf.format(live.rows.length)} positions enregistrées en attente.`
-      : 'Inactif.';
     status.style.color = '';
+    if (live.error) {
+      status.textContent = live.error;
+      status.style.color = 'var(--danger)';
+      return;
+    }
+    const parts = [];
+    if (live.lastAt) {
+      const ago = Math.max(0, Math.round((Date.now() - live.lastAt) / 1000));
+      parts.push(
+        `Dernière relève directe : ${nf.format(live.points.length)} aéronefs` +
+          `${live.provider ? ` (${live.provider})` : ''}, il y a ${ago < 90 ? `${ago} s` : `${Math.round(ago / 60)} min`}`
+      );
+    }
+    if (live.rows.length) parts.push(`${nf.format(live.rows.length)} positions enregistrées en attente`);
+    parts.push(`crédits OpenSky restants ≈ ${nf.format(remainingCredits())}/${OPENSKY_DAILY_CREDITS}`);
+    status.textContent = parts.join(' · ') + '.';
     return;
   }
   if (live.error) {
@@ -1257,9 +1309,11 @@ function updateLiveUi() {
   status.style.color = '';
   $('#live-panel').classList.remove('error');
   const ago = live.lastAt ? Math.max(0, Math.round((Date.now() - live.lastAt) / 1000)) : null;
+  const credits = remainingCredits();
   status.textContent =
     `${nf.format(live.points.length)} aéronefs reçus${live.provider ? ` · ${live.provider}` : ''}` +
-    `${live.recording ? ` · ${nf.format(live.rows.length)} positions enregistrées` : ' · enregistrement désactivé'}`;
+    `${live.recording ? ` · ${nf.format(live.rows.length)} positions enregistrées` : ' · enregistrement désactivé'}` +
+    ` · crédits OpenSky restants ≈ ${nf.format(credits)}/${OPENSKY_DAILY_CREDITS}`;
   $('#live-count').textContent = nf.format(live.points.length);
   $('#live-provider').textContent = live.provider ? `· ${live.provider}` : '';
   $('#live-ago').textContent = ago !== null ? `· il y a ${ago} s` : '';
@@ -1291,39 +1345,95 @@ function recordLive(points, timestamp) {
   if (live.rows.length > 250000) live.rows.splice(0, live.rows.length - 250000);
 }
 
+/** Applique une réponse du direct : traînées, enregistrement, carte. */
+function applyLiveResult(res) {
+  const live = liveState();
+  live.points = res.points;
+  live.provider = res.provider;
+  live.lastAt = Date.now();
+  live.error = null;
+
+  const now = res.timestamp / 1000;
+  for (const p of res.points) {
+    let path = live.trails.get(p.hex);
+    if (!path) {
+      path = [];
+      live.trails.set(p.hex, path);
+    }
+    const last = path[path.length - 1];
+    if (!last || last[0] !== p.lat || last[1] !== p.lon) path.push([p.lat, p.lon, now]);
+    if (path.length > 240) path.shift();
+  }
+
+  recordLive(res.points, now);
+  try {
+    mapView.renderLive(res.points, live.trails);
+  } catch (err) {
+    // un souci d'affichage ne doit pas faire perdre les positions reçues
+    console.warn('Affichage du direct impossible :', err);
+  }
+}
+
+/** Interroge une fois les fournisseurs accessibles depuis le navigateur. */
+async function probeDirect() {
+  const live = liveState();
+  const { lat, lon } = mapView.getCenter();
+  const res = await fetchLive({
+    lat,
+    lon,
+    radiusNm: live.radius,
+    providers: BROWSER_PROVIDERS,
+    relays: liveRelays(),
+    timeoutMs: 12000,
+  });
+  if (res.providerId === 'opensky') spendCredits(openSkyCost(lat, live.radius));
+  applyLiveResult(res);
+  return res;
+}
+
 async function pollLive() {
   const live = liveState();
   if (!live.active || live.busy) return;
   live.busy = true;
   try {
-    const { lat, lon } = mapView.getCenter();
-    const res = await fetchLive({ lat, lon, radiusNm: live.radius, relays: liveRelays() });
-    live.points = res.points;
-    live.provider = res.provider;
-    live.lastAt = Date.now();
-    live.error = null;
-
-    const now = res.timestamp / 1000;
-    for (const p of res.points) {
-      let path = live.trails.get(p.hex);
-      if (!path) {
-        path = [];
-        live.trails.set(p.hex, path);
-      }
-      const last = path[path.length - 1];
-      if (!last || last[0] !== p.lat || last[1] !== p.lon) path.push([p.lat, p.lon, now]);
-      if (path.length > 240) path.shift();
-    }
-
-    recordLive(res.points, now);
-    mapView.renderLive(res.points, live.trails);
+    await probeDirect();
   } catch (err) {
+    console.warn(err);
     live.error = err.message;
     live.points = [];
-    console.warn(err);
   } finally {
     live.busy = false;
     updateLiveUi();
+  }
+}
+
+/**
+ * Au chargement : si le relevé automatique est absent ou ancien, on tente une
+ * relève directe (OpenSky) pour afficher tout de suite du trafic réel.
+ */
+async function directIfSnapshotStale() {
+  const snap = snapshotState();
+  const lag = snap.data ? Date.now() / 1000 - snap.data.last : Infinity;
+  if (lag < 900) return;
+  const live = liveState();
+  if (live.active || live.busy) return;
+  live.busy = true;
+  try {
+    const res = await probeDirect();
+    updateLiveUi();
+    if (res.points.length) {
+      toast(
+        `Trafic réel récupéré à l'instant via ${res.provider} : ${nf.format(res.points.length)} aéronefs.`
+      );
+    } else {
+      toast('Aucun aéronef dans le rayon autour du centre de la carte.', 'error');
+    }
+  } catch (err) {
+    live.error = err.message;
+    updateLiveUi();
+    console.warn(err);
+  } finally {
+    live.busy = false;
   }
 }
 
@@ -1337,7 +1447,11 @@ function startLive() {
   pollLive();
   live.timer = setInterval(pollLive, live.interval * 1000);
   live.ticker = setInterval(updateLiveUi, LIVE_TICK_MS);
-  toast(`Direct activé : interrogation des API ADS-B toutes les ${live.interval} s.`);
+  const minutes = Math.round(live.interval / 60);
+  toast(
+    `Direct activé : OpenSky interrogé toutes les ${minutes} min ` +
+      `(≈ ${nf.format(remainingCredits())} crédits restants sur ${OPENSKY_DAILY_CREDITS} aujourd'hui).`
+  );
 }
 
 function stopLive() {

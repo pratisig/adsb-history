@@ -6,6 +6,8 @@ name: Relevé ADS-B automatique
 on:
   schedule:
     - cron: '*/10 * * * *'
+  push:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:

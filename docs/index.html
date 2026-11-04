@@ -150,10 +150,53 @@
         <section class="card live-card">
           <h2><span class="step">5</span> Données réelles</h2>
           <p class="hint">
-            Relevé ADS-B automatique de votre région, collecté toutes les 30 s par le dépôt
-            puis publié en JSON : rien à télécharger, aucune clé, aucun compte.
+            Trafic réel autour du centre de la carte, ingéré directement — aucune archive,
+            aucune clé, aucune installation.
           </p>
+
           <div class="snapshot-box">
+            <div class="snapshot-title">Direct · OpenSky</div>
+            <p class="hint">
+              L'API OpenSky autorise les appels depuis un navigateur. Elle est gratuite mais
+              limitée en crédits quotidiens : l'application les compte pour vous.
+            </p>
+            <div class="field-pair">
+              <label class="field">
+                <span>Rayon</span>
+                <select id="live-radius">
+                  <option value="10">10 NM</option>
+                  <option value="25">25 NM</option>
+                  <option value="50" selected>50 NM</option>
+                  <option value="100">100 NM</option>
+                  <option value="250">250 NM</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Rafraîchir</span>
+                <select id="live-interval">
+                  <option value="60">1 min</option>
+                  <option value="120">2 min</option>
+                  <option value="300" selected>5 min</option>
+                  <option value="900">15 min</option>
+                </select>
+              </label>
+            </div>
+            <div class="row wrap">
+              <button id="live-toggle" class="btn small primary">Activer</button>
+              <button id="live-dakar" class="btn small ghost">Dakar</button>
+            </div>
+            <label class="check">
+              <input type="checkbox" id="live-record" />
+              <span>Enregistrer pour l'historique</span>
+            </label>
+            <p class="hint" id="live-status">Inactif.</p>
+            <button id="live-build" class="btn small wide" disabled>
+              Ouvrir l'historique enregistré
+            </button>
+          </div>
+
+          <div class="snapshot-box">
+            <div class="snapshot-title">Relevé automatique du dépôt</div>
             <div class="field-pair">
               <label class="field">
                 <span>Zone relevée</span>
@@ -174,53 +217,21 @@
             <p class="hint" id="snapshot-status">Chargement du relevé automatique…</p>
             <div class="row wrap">
               <button id="snapshot-map" class="btn small" disabled>Afficher sur la carte</button>
-              <button id="snapshot-load" class="btn small primary" disabled>Explorer l'historique réel</button>
+              <button id="snapshot-load" class="btn small" disabled>Explorer l'historique réel</button>
             </div>
           </div>
+
           <details class="live-direct">
-            <summary>Direct depuis le navigateur (avancé)</summary>
+            <summary>Autres fournisseurs (avancé)</summary>
             <p class="hint">
-              Aucune API ADS-B publique n'envoie d'en-tête CORS : un navigateur ne peut pas les
-              lire directement, quel que soit le réseau. Cette voie ne fonctionne que derrière un
-              relais CORS ou un serveur local.
+              adsb.lol, airplanes.live et adsb.fi n'envoient aucun en-tête CORS : un navigateur ne
+              peut pas les lire, sauf derrière un relais. Renseignez un relais ci-dessous (par
+              exemple <code>https://votre-relais/</code>) pour les utiliser.
             </p>
-            <div class="row wrap">
-              <button id="live-toggle" class="btn small ghost">Activer</button>
-              <button id="live-dakar" class="btn small ghost">Dakar</button>
-            </div>
-            <div class="field-pair">
-              <label class="field">
-                <span>Rayon</span>
-                <select id="live-radius">
-                  <option value="10">10 NM</option>
-                  <option value="25">25 NM</option>
-                  <option value="50" selected>50 NM</option>
-                  <option value="100">100 NM</option>
-                  <option value="250">250 NM</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>Rafraîchir</span>
-                <select id="live-interval">
-                  <option value="5">5 s</option>
-                  <option value="10" selected>10 s</option>
-                  <option value="30">30 s</option>
-                  <option value="60">60 s</option>
-                </select>
-              </label>
-            </div>
             <label class="field">
               <span>Relais CORS (facultatif)</span>
               <input id="live-relay" type="url" placeholder="https://r.jina.ai/" autocomplete="off" />
             </label>
-            <label class="check">
-              <input type="checkbox" id="live-record" />
-              <span>Enregistrer pour l'historique</span>
-            </label>
-            <p class="hint" id="live-status">Inactif.</p>
-            <button id="live-build" class="btn small wide" disabled>
-              Ouvrir l'historique enregistré
-            </button>
           </details>
         </section>
 
@@ -482,10 +493,11 @@
             temporelle s'additionnent (voir §3 bis du README pour les volumes réalistes).
           </li>
           <li>
-            <strong>Données réelles</strong> : la carte « 5 · Données réelles » lit le relevé
-            automatique du dépôt (trafic réel des dernières heures autour de Dakar, Saint-Louis,
-            Ziguinchor, Paris, Montréal — sans archive ni clé). « Afficher sur la carte » montre
-            les aéronefs, « Explorer l'historique réel » en fait un jeu de données interrogeable.
+            <strong>Données réelles</strong> : la carte « 5 · Données réelles » ingère le trafic
+            directement. <em>Direct · OpenSky</em> fonctionne depuis le navigateur (400 crédits
+            gratuits par jour, comptés par l'application) ; <em>Relevé automatique</em> fournit
+            l'historique des 3 dernières heures autour de Dakar, Saint-Louis, Ziguinchor, Paris et
+            Montréal, sans archive ni clé.
           </li>
           <li>
             <strong>Requêter</strong> : choisissez une zone (bouton « Dessiner » ou zone

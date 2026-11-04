@@ -54,42 +54,57 @@ jours parce qu'elle est simulée ; vos imports réels peuvent couvrir plusieurs 
 
 ## 2 bis. Voir les données réelles tout de suite (sans archive)
 
-Carte **« 5 · Données réelles »** dans la barre latérale. Deux voies :
+Carte **« 5 · Données réelles »**, deux sources complémentaires — aucune archive, aucune clé,
+aucune installation.
 
-### a) Relevé automatique (recommandé — fonctionne partout)
+### a) Direct · OpenSky (immédiat, dans le navigateur)
 
-Un **workflow GitHub Actions** (`.github/workflows/live-snapshot.yml`) interroge les API ADS-B
-publiques toutes les 30 s, pour les zones listées dans `docs/data/live-zones.json`
-(Dakar, Saint-Louis, Ziguinchor, Paris, Montréal…), et publie le résultat sur la branche
-`live` du dépôt. La page lit ensuite ce JSON : **données réelles, aucune archive, aucune clé,
-aucun compte**.
+OpenSky est la seule API ADS-B publique qui autorise les appels **depuis un navigateur**
+(`Access-Control-Allow-Origin: *`). L'application l'interroge donc directement :
 
-1. choisissez la **zone relevée** et la **fenêtre affichée** (30 min, 1 h, 3 h ou tout le relevé) ;
-2. **Afficher sur la carte** → dernière position de chaque aéronef + traînée récente ;
-3. **Explorer l'historique réel** → le relevé devient un jeu de données complet : filtres,
-   période, carte, tableau des aéronefs, export CSV.
+1. cadrez la zone voulue (bouton **Dakar** pour y aller directement) ;
+2. choisissez le **rayon** et le **rafraîchissement** (1 à 15 min) ;
+3. cliquez sur **Activer** — les aéronefs réels apparaissent, avec indicatifs, altitudes,
+   vitesses, traînées et statut militaire.
 
-Le relevé couvre les 3 dernières heures (fenêtre glissante). Comptez quelques minutes de décalage
-par rapport à l'instant présent : GitHub espace les exécutions planifiées.
+Au chargement de la page, si aucun relevé récent n'est disponible, une relève directe est faite
+automatiquement : la carte montre du trafic réel sans rien cliquer.
 
-> Pour ajouter une zone, éditez `docs/data/live-zones.json` (identifiant, libellé, latitude,
-> longitude, rayon en NM) ; le prochain passage du workflow s'en occupe.
-> Si l'onglet **Actions** du dépôt affiche « Workflows aren't running on this fork », cliquez une
-> fois sur *I have read and I understand my workflows, go ahead and enable them* — c'est ce qui
-> autorise le relevé automatique.
-
-### b) Direct depuis le navigateur (avancé, derrière un relais)
-
-Les API ADS-B publiques **ne renvoient pas d'en-tête `Access-Control-Allow-Origin`** : un
-navigateur ne peut pas lire leurs réponses directement, quel que soit le réseau. C'est pour cela
-que le relevé automatique existe. La section *« Direct depuis le navigateur »* reste utile si
-vous passez par un **relais CORS** (champ dédié, `https://r.jina.ai/` essayé par défaut) ou par
-un serveur local.
+> 💳 OpenSky accorde **400 crédits par jour** en accès anonyme ; une requête coûte 1 crédit pour
+> un petit rayon (jusqu'à 100 NM) et 2 à 4 au-delà. L'application compte les crédits consommés
+> localement et les affiche (*« crédits OpenSky restants ≈ … »*). À 5 minutes d'intervalle, la
+> journée tient largement. Créez un compte OpenSky (gratuit) pour 4 000 crédits/jour si besoin.
 
 Cochez *« Enregistrer pour l'historique »* pour accumuler les positions reçues (1 point / 10 s et
-par aéronef, plafond 250 000), puis *« Ouvrir l'historique enregistré »* pour l'interroger comme
-n'importe quel jeu de données. L'onglet en arrière-plan met la surveillance en pause
-automatiquement.
+par aéronef, plafond 250 000), puis *« Ouvrir l'historique enregistré »* : cet enregistrement
+devient un jeu de données interrogeable comme les autres (filtres, carte, tableaux, export CSV).
+
+### b) Relevé automatique du dépôt (historique des dernières heures)
+
+Un **workflow GitHub Actions** (`.github/workflows/live-snapshot.yml`) interroge les API ADS-B
+publiques **toutes les 30 s** — `adsb.lol` puis `adsb.fi` puis `OpenSky` — pour les zones de
+`docs/data/live-zones.json` (Dakar, Saint-Louis, Ziguinchor, Paris, Montréal), et publie le
+résultat sur la branche `live`. La page lit ensuite ce JSON : **3 heures de trafic réel**.
+
+1. choisissez la **zone relevée** et la **fenêtre affichée** (30 min, 1 h, 3 h ou tout) ;
+2. **Afficher sur la carte** → dernière position de chaque aéronef + traînée récente ;
+3. **Explorer l'historique réel** → le relevé devient un jeu de données complet.
+
+Le workflow se relance toutes les 10 minutes et à chaque modification de `main`. Comptez
+quelques minutes de décalage : GitHub espace les exécutions planifiées.
+
+> Pour ajouter une zone, éditez `docs/data/live-zones.json` (identifiant, libellé, latitude,
+> longitude, rayon en NM) — le prochain passage s'en occupe.
+> Si l'onglet **Actions** du dépôt affiche « Workflows aren't running on this fork », cliquez une
+> fois sur *I have read and I understand my workflows, go ahead and enable them*.
+
+### c) Pourquoi pas les autres fournisseurs ?
+
+`api.adsb.lol`, `opendata.adsb.fi` et `api.airplanes.live` renvoient leurs données **sans en-tête
+CORS** (vérifié : la réponse de `api.adsb.lol/v2/point/…` ne contient aucun
+`Access-Control-Allow-Origin`). Un navigateur ne peut donc pas les lire, quel que soit le réseau.
+La section *« Autres fournisseurs (avancé) »* permet de passer par un **relais CORS** si vous en
+avez un (`https://r.jina.ai/` est essayé par défaut).
 
 ---
 

@@ -26,6 +26,9 @@ import {
   RELAYS,
   fetchSnapshot,
   fetchSnapshotIndex,
+  openSkyCost,
+  BROWSER_PROVIDERS,
+  OPENSKY_DAILY_CREDITS,
 } from '../assets/js/live.js';
 import { collect as collectSnapshot } from '../tools/live-snapshot.mjs';
 
@@ -436,6 +439,14 @@ async function main() {
       fetchImpl: async () => ({ ok: true, json: async () => ({ zones: [{ id: 'dakar', label: 'Dakar' }] }) }),
     });
     check('fetchSnapshotIndex : zones listées', Array.isArray(index) && index[0].id === 'dakar');
+
+    check('crédits OpenSky : petit rayon = 1 crédit', openSkyCost(14.74, 50) === 1);
+    check('crédits OpenSky : grand rayon plus cher', openSkyCost(14.74, 250) >= 2);
+    check('crédits OpenSky : quota anonyme', OPENSKY_DAILY_CREDITS === 400);
+    check(
+      'fournisseurs navigateur : OpenSky d’abord (seul à envoyer CORS)',
+      BROWSER_PROVIDERS[0].id === 'opensky' && BROWSER_PROVIDERS.length === 4
+    );
 
     /* Collecte côté serveur : écriture d'un relevé à partir d'une API simulée. */
     const dir = await mkdtemp(path.join(os.tmpdir(), 'turnstone-live-'));
