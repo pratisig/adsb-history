@@ -1073,7 +1073,11 @@ async function init() {
     );
   } catch (err) {
     console.error(err);
-    toast(`Chargement de la démo impossible : ${err.message}`, 'error');
+    const hint =
+      location.protocol === 'file:'
+        ? " Cette page est ouverte en file:// : lancez plutôt « python3 -m http.server 8000 --directory lite » puis ouvrez http://localhost:8000."
+        : '';
+    toast(`Chargement de la démo impossible : ${err.message}.${hint}`, 'error');
     setLoading(false);
   }
 }
