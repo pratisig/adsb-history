@@ -20,6 +20,7 @@ import {
   fetchSnapshotIndex,
   snapshotTraffic,
   RELAYS,
+  RELAYS_PUBLIC,
   BROWSER_PROVIDERS,
   openSkyCost,
   OPENSKY_DAILY_CREDITS,
@@ -1157,7 +1158,6 @@ async function loadSnapshot(zoneId = null) {
   } finally {
     snap.loading = false;
     updateSnapshotUi();
-    directIfSnapshotStale();
   }
 }
 
@@ -1356,7 +1356,9 @@ function updateLiveUi() {
   status.textContent =
     `${nf.format(live.points.length)} aéronefs reçus${live.provider ? ` · ${live.provider}` : ''}` +
     `${live.recording ? ` · ${nf.format(live.rows.length)} positions enregistrées` : ' · enregistrement désactivé'}` +
-    ` · crédits OpenSky restants ≈ ${nf.format(credits)}/${OPENSKY_DAILY_CREDITS}`;
+    (live.relayId && live.relayId !== 'direct'
+      ? ' · via relais public'
+      : ` · crédits OpenSky restants ≈ ${nf.format(credits)}/${OPENSKY_DAILY_CREDITS}`);
   $('#live-count').textContent = nf.format(live.points.length);
   $('#live-provider').textContent = live.provider ? `· ${live.provider}` : '';
   $('#live-ago').textContent = ago !== null ? `· il y a ${ago} s` : '';
@@ -1393,6 +1395,7 @@ function applyLiveResult(res) {
   const live = liveState();
   live.points = res.points;
   live.provider = res.provider;
+  live.relayId = res.relayId || 'direct';
   live.lastAt = Date.now();
   live.error = null;
 
@@ -1427,12 +1430,18 @@ async function probeDirect() {
     radiusNm: live.radius,
     providers: BROWSER_PROVIDERS,
     relays: liveRelays(),
-    timeoutMs: 12000,
+    timeoutMs: 8000,
   });
-  if (res.providerId === 'opensky') spendCredits(openSkyCost(lat, live.radius));
+  if (res.providerId === 'opensky' && res.relayId === 'direct') spendCredits(openSkyCost(lat, live.radius));
+  rememberRelay(res.relayId);
   applyLiveResult(res);
   return res;
 }
+
+/** Message court : le détail technique complet reste dans la console. */
+const DIRECT_ERROR =
+  'Direct impossible : les API ADS-B publiques refusent les appels depuis un navigateur, et les ' +
+  'relais publics n’ont pas répondu. Le relevé automatique ci-dessus fournit les données réelles.';
 
 async function pollLive() {
   const live = liveState();
@@ -1442,41 +1451,11 @@ async function pollLive() {
     await probeDirect();
   } catch (err) {
     console.warn(err);
-    live.error = err.message;
+    live.error = DIRECT_ERROR;
     live.points = [];
   } finally {
     live.busy = false;
     updateLiveUi();
-  }
-}
-
-/**
- * Au chargement : si le relevé automatique est absent ou ancien, on tente une
- * relève directe (OpenSky) pour afficher tout de suite du trafic réel.
- */
-async function directIfSnapshotStale() {
-  const snap = snapshotState();
-  const lag = snap.data ? Date.now() / 1000 - snap.data.last : Infinity;
-  if (lag < 900) return;
-  const live = liveState();
-  if (live.active || live.busy) return;
-  live.busy = true;
-  try {
-    const res = await probeDirect();
-    updateLiveUi();
-    if (res.points.length) {
-      toast(
-        `Trafic réel récupéré à l'instant via ${res.provider} : ${nf.format(res.points.length)} aéronefs.`
-      );
-    } else {
-      toast('Aucun aéronef dans le rayon autour du centre de la carte.', 'error');
-    }
-  } catch (err) {
-    live.error = err.message;
-    updateLiveUi();
-    console.warn(err);
-  } finally {
-    live.busy = false;
   }
 }
 
@@ -1492,8 +1471,8 @@ function startLive() {
   live.ticker = setInterval(updateLiveUi, LIVE_TICK_MS);
   const minutes = Math.round(live.interval / 60);
   toast(
-    `Direct activé : OpenSky interrogé toutes les ${minutes} min ` +
-      `(≈ ${nf.format(remainingCredits())} crédits restants sur ${OPENSKY_DAILY_CREDITS} aujourd'hui).`
+    `Direct activé : relève toutes les ${minutes} min via un relais public ` +
+      '(ces API refusent les appels depuis un navigateur).'
   );
 }
 
@@ -1509,22 +1488,43 @@ function stopLive() {
   updateLiveUi();
 }
 
-/** Relais à essayer : appel direct, puis relais indiqué (ou r.jina.ai par défaut). */
+const RELAY_MEMO_KEY = 'turnstone.live.relay';
+
+/**
+ * Relais à essayer : appel direct, puis relais publics — en commençant par celui
+ * qui a fonctionné lors de la relève précédente (mémorisé localement).
+ */
 function liveRelays() {
-  const input = $('#live-relay');
-  const prefix = input && typeof input.value === 'string' ? input.value.trim() : '';
-  const relays = [RELAYS[0]];
+  const prefix = ($('#live-relay') && $('#live-relay').value.trim()) || '';
   if (prefix) {
-    relays.push({
-      id: 'custom',
-      label: 'relais indiqué',
-      wrap: (url) => (prefix.includes('{url}') ? prefix.replace('{url}', url) : prefix + url),
-      text: /jina\.ai/.test(prefix),
-    });
-  } else {
-    relays.push(RELAYS[1]);
+    return [
+      RELAYS[0],
+      {
+        id: 'custom',
+        label: 'relais indiqué',
+        wrap: (url) => (prefix.includes('{url}') ? prefix.replace('{url}', url) : prefix + url),
+        text: /jina\.ai/.test(prefix),
+      },
+    ];
   }
-  return relays;
+  let preferred = null;
+  try {
+    preferred = localStorage.getItem(RELAY_MEMO_KEY);
+  } catch {
+    preferred = null;
+  }
+  const others = RELAYS_PUBLIC.filter((relay) => relay.id !== preferred);
+  const first = RELAYS_PUBLIC.find((relay) => relay.id === preferred);
+  return [RELAYS[0], ...(first ? [first] : []), ...others];
+}
+
+function rememberRelay(relayId) {
+  if (!relayId || relayId === 'direct' || relayId === 'custom') return;
+  try {
+    localStorage.setItem(RELAY_MEMO_KEY, relayId);
+  } catch {
+    /* mode privé : pas de mémorisation */
+  }
 }
 
 /** Crée un jeu de données à partir de lignes brutes et l'ouvre. */
@@ -1631,8 +1631,9 @@ function bindEvents() {
       const res = await probeDirect();
       toast(`Actualisé via ${res.provider} : ${nf.format(res.points.length)} aéronefs autour de la carte.`);
     } catch (err) {
-      live.error = err.message;
-      toast(`Actualisation impossible : ${err.message}`, 'error');
+      console.warn(err);
+      live.error = DIRECT_ERROR;
+      toast('Relève directe impossible (CORS) — le relevé automatique reste disponible.', 'error');
     } finally {
       live.busy = false;
       updateLiveUi();
@@ -1854,8 +1855,6 @@ async function init() {
       { padding: [20, 20] }
     );
     updateLiveUi();
-    // si un relevé réel est disponible, il devient la vue par défaut
-    await maybeAutoOpenSnapshot();
   } catch (err) {
     console.error(err);
     const hint =
@@ -1864,6 +1863,13 @@ async function init() {
         : '';
     toast(`Chargement de la démo impossible : ${err.message}.${hint}`, 'error');
     setLoading(false);
+  } finally {
+    // si un relevé réel est disponible, il devient la vue par défaut — même si la démo a échoué
+    try {
+      await maybeAutoOpenSnapshot();
+    } catch (err) {
+      console.warn('Ouverture automatique du relevé impossible :', err);
+    }
   }
 }
 

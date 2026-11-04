@@ -20,7 +20,7 @@ permissions:
 jobs:
   releve:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 70
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,19 +28,35 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Collecte (une relève toutes les 30 s pendant ~7 min)
-        run: node docs/tools/live-snapshot.mjs --out=data --seed --loop-minutes=7 --poll-seconds=30
-      - name: Publication sur la branche live
+      - name: Relevé continu et publication
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 5 passes de 8 min après un push (≈ 40 min de relevé), 1 passe sinon
+          PASSES: ${{ github.event_name == 'push' && '5' || '1' }}
         run: |
           set -euo pipefail
-          git config user.name "releve-adsb"
-          git config user.email "actions@users.noreply.github.com"
-          git checkout --orphan live
-          git rm -rf --quiet . || true
-          git add -f data
-          if git diff --cached --quiet; then
-            echo "Aucune donnée à publier."
-            exit 0
-          fi
-          git commit -q -m "relevé $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          git push --force origin HEAD:live
+          publish() {
+            rm -rf /tmp/live-publish
+            mkdir -p /tmp/live-publish/data
+            cp data/*.json /tmp/live-publish/data/
+            (
+              cd /tmp/live-publish
+              git init -q
+              git checkout -q --orphan live
+              git add -A
+              if git diff --cached --quiet; then
+                echo "Rien de nouveau à publier."
+                exit 0
+              fi
+              git -c user.name="releve-adsb" -c user.email="actions@users.noreply.github.com" \
+                  commit -q -m "relevé $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              git push -q --force \
+                "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:live
+              echo "Publié : $(ls data | tr '\n' ' ')"
+            )
+          }
+          for i in $(seq 1 "${PASSES}"); do
+            echo "=== Passe ${i}/${PASSES} ==="
+            node docs/tools/live-snapshot.mjs --out=data --seed --loop-minutes=8 --poll-seconds=30
+            publish
+          done

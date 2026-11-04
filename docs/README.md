@@ -54,65 +54,50 @@ jours parce qu'elle est simulée ; vos imports réels peuvent couvrir plusieurs 
 
 ## 2 bis. Voir les données réelles tout de suite (sans archive)
 
-Carte **« 5 · Données réelles »**, deux sources complémentaires — aucune archive, aucune clé,
-aucune installation.
+Carte **« 5 · Données réelles »**. Elle s'ouvre **d'elle-même au chargement** : la carte, le
+résumé, les tableaux et les exports travaillent alors sur du trafic réel (la démonstration
+simulée reste disponible dans la liste des jeux de données).
 
-### a) Direct · OpenSky (immédiat, dans le navigateur)
-
-OpenSky est la seule API ADS-B publique qui autorise les appels **depuis un navigateur**
-(`Access-Control-Allow-Origin: *`). L'application l'interroge donc directement :
-
-1. cadrez la zone voulue (bouton **Dakar** pour y aller directement) ;
-2. choisissez le **rayon** et le **rafraîchissement** (1 à 15 min) ;
-3. cliquez sur **Actualiser** (une relève) ou **Activer** (relève répétée) — les aéronefs réels
-   apparaissent, avec indicatifs, altitudes, vitesses, traînées et statut militaire.
-
-Au chargement de la page, si aucun relevé récent n'est disponible, une relève directe est faite
-automatiquement : la carte montre du trafic réel sans rien cliquer.
-
-> 💳 OpenSky accorde **400 crédits par jour** en accès anonyme ; une requête coûte 1 crédit pour
-> un petit rayon (jusqu'à 100 NM) et 2 à 4 au-delà. L'application compte les crédits consommés
-> localement et les affiche (*« crédits OpenSky restants ≈ … »*). À 5 minutes d'intervalle, la
-> journée tient largement. Créez un compte OpenSky (gratuit) pour 4 000 crédits/jour si besoin.
-
-Cochez *« Enregistrer pour l'historique »* pour accumuler les positions reçues (1 point / 10 s et
-par aéronef, plafond 250 000), puis *« Ouvrir l'historique enregistré »* : cet enregistrement
-devient un jeu de données interrogeable comme les autres (filtres, carte, tableaux, export CSV).
-
-### b) Relevé automatique du dépôt (historique des dernières heures)
+### a) Le relevé automatique (source fiable)
 
 Un **workflow GitHub Actions** (`.github/workflows/live-snapshot.yml`) interroge les API ADS-B
-publiques **toutes les 30 s** — `adsb.lol` puis `adsb.fi` puis `OpenSky` — pour les zones de
-`docs/data/live-zones.json` (Dakar, Saint-Louis, Ziguinchor, Paris, Montréal), et publie le
-résultat sur la branche `live`. La page lit ensuite ce JSON : **3 heures de trafic réel**.
+publiques depuis un runner — donc hors navigateur — pour les zones de
+`docs/data/live-zones.json` (Dakar, Saint-Louis, Ziguinchor, Paris, Montréal) :
 
-1. choisissez la **zone relevée** et la **fenêtre affichée** (30 min, 1 h, 3 h ou tout) ;
-2. **Afficher sur la carte** → dernière position de chaque aéronef + traînée récente ;
-3. **Explorer l'historique réel** → le relevé devient un jeu de données complet.
+- une relève **toutes les 30 s**, fenêtre glissante de **3 heures**, cascade `adsb.lol` →
+  `adsb.fi` → `OpenSky` ;
+- publication du résultat sur la branche `live` (JSON compact, ≈ 100 Ko par zone) ;
+- après chaque modification du dépôt, **5 passes de 8 minutes** (≈ 40 min de relevé continu) ;
+  en exécution planifiée, une passe de 8 minutes.
 
-Le workflow se relance toutes les 10 minutes et à chaque modification de `main`. Comptez
-quelques minutes de décalage : GitHub espace les exécutions planifiées.
+Dans la carte : choisissez la **zone** et la **fenêtre** (30 min, 1 h, 3 h ou tout le relevé),
+puis **Afficher sur la carte** (dernière position + traînée) ou **Explorer l'historique réel**
+(le relevé devient un jeu de données interrogeable : filtres, timeline, tableaux, export CSV).
 
-**Au chargement de la page, si ce relevé existe, il s'ouvre tout seul** : la carte, le résumé,
-les tableaux et les exports travaillent alors sur du trafic réel — la démonstration simulée
-reste disponible dans la liste des jeux de données.
+> **Pour rafraîchir** : le lien *« demander une mise à jour »* ouvre la page du workflow — le
+> bouton **Run workflow** lance un nouveau relevé. Pour un rafraîchissement **automatique toutes
+> les 10 minutes**, autorisez une fois les workflows planifiés : onglet **Actions** du dépôt →
+> *I have read and I understand my workflows, go ahead and enable them* (GitHub désactive les
+> tâches planifiées des forks par défaut). Sans cette autorisation, le relevé se met à jour à
+> chaque modification du dépôt et la page indique l'âge du dernier relevé.
 
-> Pour ajouter une zone, éditez `docs/data/live-zones.json` (identifiant, libellé, latitude,
-> longitude, rayon en NM) — le prochain passage s'en occupe.
-> **Rafraîchissement automatique** : sur un fork, GitHub n'exécute pas les workflows planifiés
-> tant qu'on ne l'a pas autorisé une fois. Si l'onglet **Actions** affiche « Workflows aren't
-> running on this fork », cliquez sur *I have read and I understand my workflows, go ahead and
-> enable them* : le relevé se mettra alors à jour toutes les 10 minutes. Sans cela, il se
-> rafraîchit à chaque modification du dépôt — et la page complète d'elle-même avec une relève
-> directe OpenSky dès que le relevé date de plus de 15 minutes.
+### b) Le direct depuis le navigateur (facultatif)
 
-### c) Pourquoi pas les autres fournisseurs ?
+**Aucune** API ADS-B publique n'envoie d'en-tête `Access-Control-Allow-Origin` : `api.adsb.lol`,
+`opendata.adsb.fi`, `api.airplanes.live` (vérifié : 200 sans en-tête CORS) **et**
+`opensky-network.org` (essayé depuis un navigateur : bloqué). Un navigateur ne peut donc pas lire
+ces réponses, quel que soit le réseau — ce n'est pas un problème de DNS ni de bloqueur.
 
-`api.adsb.lol`, `opendata.adsb.fi` et `api.airplanes.live` renvoient leurs données **sans en-tête
-CORS** (vérifié : la réponse de `api.adsb.lol/v2/point/…` ne contient aucun
-`Access-Control-Allow-Origin`). Un navigateur ne peut donc pas les lire, quel que soit le réseau.
-La section *« Autres fournisseurs (avancé) »* permet de passer par un **relais CORS** si vous en
-avez un (`https://r.jina.ai/` est essayé par défaut).
+Le mode direct ne peut fonctionner que via un **relais CORS** (proxy qui ajoute l'en-tête). Trois
+relais publics sont essayés automatiquement — `api.allorigins.win`, `api.codetabs.com`,
+`r.jina.ai` — et celui qui répond est mémorisé pour les relèves suivantes. Ces relais sont
+gratuits, parfois lents ou limités : à considérer comme un bonus, pas comme la source principale.
+Le champ *« Relais personnalisé »* accepte votre propre relais (`https://mon-relais/{url}`).
+
+Rayon 10 à 250 NM, relève toutes les 1 à 15 min, bouton **Actualiser** pour une relève unique.
+Cochez *« Enregistrer pour l'historique »* pour accumuler les positions reçues (1 point / 10 s et
+par aéronef) puis *« Ouvrir l'historique enregistré »* pour l'interroger comme un jeu de données.
+L'onglet en arrière-plan met la relève en pause.
 
 ---
 

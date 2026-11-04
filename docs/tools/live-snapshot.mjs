@@ -141,9 +141,10 @@ async function loadZones(file) {
 
 /** Reprend le relevé publié lors du passage précédent (fenêtre glissante). */
 async function seedZone(zone, { repo, out, windowMinutes }) {
+  // le fichier local d'abord (pas de cache CDN), puis le dernier relevé publié
   const candidates = [
-    `https://raw.githubusercontent.com/${repo}/live/data/${zone.id}.json`,
     path.join(out, `${zone.id}.json`),
+    `https://raw.githubusercontent.com/${repo}/live/data/${zone.id}.json`,
   ];
   for (const ref of candidates) {
     try {
