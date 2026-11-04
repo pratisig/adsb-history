@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
 Génère des archives de test au format tar1090 / globe_history afin de valider
-le décodeur JavaScript (lite/assets/js/parse.js) sans dépendre de vraies données.
+le décodeur JavaScript (docs/assets/js/parse.js) sans dépendre de vraies données.
 
-Produit dans lite/test/fixtures/ :
+Produit dans docs/test/fixtures/ :
   - sample.tar           : archive complète
   - sample.tar.aa/.ab    : la même archive coupée en deux (test du streaming)
   - expected.json        : les positions attendues (référence)
 
 Usage :
-    python3 lite/tools/make_test_fixture.py
+    python3 docs/tools/make_test_fixture.py
 """
 
 import json
