@@ -322,11 +322,16 @@ export function snapshotUrl(zoneId = 'dakar', { repo = SNAPSHOT_REPO, branch = S
   return `https://raw.githubusercontent.com/${repo}/${branch}/data/${zoneId}.json`;
 }
 
-/** URLs de l'index des zones relevées. */
+/**
+ * URLs de l'index des zones relevées, puis repli sur la liste des zones déclarées
+ * (`docs/data/live-zones.json`, servie par le site lui-même) : la liste des zones
+ * reste donc visible même si le relevé n'a jamais tourné.
+ */
 export function snapshotIndexCandidates({ repo = SNAPSHOT_REPO, branch = SNAPSHOT_BRANCH } = {}) {
   return [
     `https://raw.githubusercontent.com/${repo}/${branch}/data/index.json`,
     `https://cdn.jsdelivr.net/gh/${repo}@${branch}/data/index.json`,
+    'data/live-zones.json',
     'data/live/index.json',
   ];
 }

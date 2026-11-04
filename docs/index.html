@@ -150,8 +150,9 @@
         <section class="card live-card">
           <h2><span class="step">5</span> Données réelles</h2>
           <p class="hint">
-            Trafic réel collecté automatiquement pour votre région, publié en JSON par le dépôt :
-            rien à télécharger, aucune clé, aucun compte. Ouvre tout seul au chargement.
+            Trafic réel collecté automatiquement par le dépôt et publié en JSON :
+            rien à télécharger, aucune clé, aucun compte. Ouvre tout seul au chargement,
+            pour la zone choisie ci-dessous — n'importe où dans le monde.
           </p>
 
           <div class="snapshot-box">
@@ -182,6 +183,64 @@
               Rafraîchissement : <a id="snapshot-refresh-link" href="https://github.com/pratisig/adsb-history/actions/workflows/live-snapshot.yml" target="_blank" rel="noopener">demander une mise à jour</a>
               (bouton « Run workflow »), ou autoriser une fois les workflows planifiés du dépôt
               pour un relevé automatique toutes les 10 minutes.
+            </p>
+          </div>
+
+          <div class="snapshot-box zone-picker">
+            <div class="snapshot-title">N'importe quel point du globe</div>
+            <p class="hint">
+              Le relevé ci-dessus ne couvre que les zones <em>déjà déclarées</em> dans
+              <a href="https://github.com/pratisig/adsb-history/blob/main/docs/data/live-zones.json" target="_blank" rel="noopener"><code>docs/data/live-zones.json</code></a> :
+              chaque zone coûte une requête toutes les 30 secondes, on ne peut pas relever la
+              planète entière en continu. Pour tout autre endroit du monde, deux possibilités :
+            </p>
+            <div class="field-pair">
+              <label class="field">
+                <span>Latitude</span>
+                <input id="zone-lat" type="number" step="0.01" min="-90" max="90" value="14.74" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span>Longitude</span>
+                <input id="zone-lon" type="number" step="0.01" min="-180" max="180" value="-17.49" autocomplete="off" />
+              </label>
+            </div>
+            <div class="field-pair">
+              <label class="field">
+                <span>Rayon</span>
+                <select id="zone-radius">
+                  <option value="25">25 NM</option>
+                  <option value="50">50 NM</option>
+                  <option value="100" selected>100 NM</option>
+                  <option value="150">150 NM</option>
+                  <option value="250">250 NM</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Nom de la zone (facultatif)</span>
+                <input id="zone-label" type="text" placeholder="Ex. : Casablanca" autocomplete="off" />
+              </label>
+            </div>
+            <div class="row wrap">
+              <button id="zone-pick" class="btn small ghost" aria-pressed="false">Choisir sur la carte</button>
+              <button id="zone-live" class="btn small">Voir le trafic en direct</button>
+              <button id="zone-add" class="btn small ghost">Ajouter au relevé</button>
+            </div>
+            <p class="hint" id="zone-status">
+              <strong>Voir le trafic en direct</strong> : trafic actuel autour de ce point, via un
+              relais public — fonctionne partout, sans installation, mais ne garde pas d'historique
+              si vous laissez la page fermée.
+            </p>
+            <pre class="zone-snippet" id="zone-snippet" hidden></pre>
+            <p class="hint" id="zone-add-hint" hidden>
+              <span id="zone-add-lead">Ligne copiée.</span> Collez-la dans
+              <a href="https://github.com/pratisig/adsb-history/edit/main/docs/data/live-zones.json" target="_blank" rel="noopener"><code>docs/data/live-zones.json</code></a>
+              (entre les crochets de <code>zones</code>) puis validez : le relevé suivant l'inclut,
+              et elle apparaît dans la liste « Zone relevée ».
+            </p>
+            <p class="hint">
+              <strong>Historique complet d'une autre région</strong> : étape 2 ci-dessous, importez
+              une archive ADS-B (monde entier, plusieurs jours) ou un CSV. C'est la seule façon
+              d'avoir un historique sur un point que le dépôt n'a pas relevé.
             </p>
           </div>
 

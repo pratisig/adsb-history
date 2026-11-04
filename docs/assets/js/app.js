@@ -1035,17 +1035,58 @@ function runWorkerImport(target, options, onProgress) {
 /* Relevé automatique : données réelles collectées hors du navigateur          */
 /* -------------------------------------------------------------------------- */
 
+const ZONE_MEMO_KEY = 'turnstone.snapshot.zone';
+/** Zone essayée seulement si l'index des zones est illisible (hors ligne). */
+const ZONE_FALLBACK = 'dakar';
+
+function rememberedZone() {
+  try {
+    return localStorage.getItem(ZONE_MEMO_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function rememberZone(id) {
+  try {
+    if (id) localStorage.setItem(ZONE_MEMO_KEY, id);
+  } catch {
+    /* mode privé : la zone reste en mémoire pour la session */
+  }
+}
+
 function snapshotState() {
   if (!state.snapshot) {
     state.snapshot = {
       loading: false,
       data: null,
       zones: [],
-      zoneId: 'dakar',
+      zoneId: rememberedZone(), // aucune zone par défaut en dur : le monde entier
       error: null,
     };
   }
   return state.snapshot;
+}
+
+/** Métadonnées d'une zone déclarée (libellé, centre, rayon en NM). */
+function zoneMeta(id) {
+  return snapshotState().zones.find((z) => z.id === id) || null;
+}
+
+/** Cadre la carte sur un cercle zone (rayon en milles nautiques). */
+function fitZone(zone) {
+  if (!zone || !Number.isFinite(zone.lat) || !Number.isFinite(zone.lon)) return;
+  const dLat = (zone.radius || 100) / 60;
+  const dLon = dLat / Math.max(0.25, Math.cos((zone.lat * Math.PI) / 180));
+  const bounds = [
+    [zone.lat - dLat, zone.lon - dLon],
+    [zone.lat + dLat, zone.lon + dLon],
+  ];
+  try {
+    mapView.map.fitBounds(bounds, { padding: [30, 30], maxZoom: 10 });
+  } catch (err) {
+    console.warn('Cadrage de la zone impossible :', err);
+  }
 }
 
 /** Durée de la fenêtre affichée, en minutes (null = tout le relevé). */
@@ -1159,23 +1200,40 @@ async function loadSnapshot(zoneId = null) {
   updateSnapshotUi();
   try {
     if (!snap.zones.length) {
-      const zones = await fetchSnapshotIndex().catch(() => null);
-      if (zones && zones.length) {
-        snap.zones = zones;
-        if (!zones.some((z) => z.id === snap.zoneId)) snap.zoneId = zones[0].id;
-        fillSnapshotZones();
+      const published = (await fetchSnapshotIndex().catch(() => null)) || [];
+      // la liste déclarée dans le dépôt fait foi pour les zones ajoutées à la main
+      const declared =
+        (await fetchSnapshotIndex({ urls: ['data/live-zones.json'] }).catch(() => null)) || [];
+      const merged = new Map();
+      for (const zone of [...published, ...declared]) {
+        if (zone && zone.id && !merged.has(zone.id)) merged.set(zone.id, zone);
       }
+      snap.zones = [...merged.values()];
     }
+    // zone demandée > zone mémorisée > première zone déclarée
+    if (snap.zones.length) {
+      if (!snap.zoneId || !snap.zones.some((z) => z.id === snap.zoneId)) {
+        snap.zoneId = snap.zones[0].id;
+      }
+      fillSnapshotZones();
+    }
+    if (!snap.zoneId) snap.zoneId = ZONE_FALLBACK;
     snap.data = await fetchSnapshot({ zoneId: snap.zoneId });
+    rememberZone(snap.zoneId);
   } catch (err) {
     snap.data = null;
-    snap.error =
-      `Relevé automatique indisponible (${err.message}). Vérifiez que le workflow « Relevé ADS-B automatique » ` +
-      "a bien tourné (onglet Actions du dépôt), ou importez une archive / un CSV à l'étape 2.";
+    const zone = zoneMeta(snap.zoneId);
+    snap.error = zone
+      ? `La zone « ${zone.label} » est déclarée mais n'a pas encore été relevée : elle le sera au ` +
+        'prochain passage du workflow (« demander une mise à jour » ci-dessous). Les autres zones ' +
+        'restent consultables dans la liste.'
+      : `Relevé automatique indisponible (${err.message}). Vérifiez que le workflow « Relevé ADS-B ` +
+        "automatique » a bien tourné (onglet Actions du dépôt), ou importez une archive / un CSV à l'étape 2.";
   } finally {
     snap.loading = false;
     updateSnapshotUi();
     syncTitle();
+    if (snap.data && !snap.data.samples.length) fitZone(zoneMeta(snap.zoneId));
   }
 }
 
@@ -1262,6 +1320,96 @@ async function buildSnapshotDataset() {
   } catch (err) {
     toast(`Ouverture impossible : ${err.message}`, 'error');
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* N'importe quel point du globe : direct ici + ajout d'une zone au relevé     */
+/* -------------------------------------------------------------------------- */
+
+/** Zoom Leaflet approximatif pour un rayon donné (en milles nautiques). */
+const ZOOM_BY_RADIUS = [
+  [10, 10],
+  [25, 9],
+  [50, 8],
+  [100, 7],
+  [150, 6],
+  [250, 5],
+  [500, 4],
+];
+
+function zoomForRadius(radius) {
+  const nm = Number(radius) || 100;
+  let best = ZOOM_BY_RADIUS[1];
+  for (const pair of ZOOM_BY_RADIUS) {
+    if (Math.abs(pair[0] - nm) < Math.abs(best[0] - nm)) best = pair;
+  }
+  return best[1];
+}
+
+/** Identifiant stable et lisible pour une zone ajoutée à la main. */
+function zoneSlug(lat, lon) {
+  const part = (v) => Number(v).toFixed(3).replace('-', 'm').replace('.', 'p');
+  return `zone-${part(lat)}-${part(lon)}`;
+}
+
+/** Lit le point saisi dans la carte 5 ; renvoie null (et prévient) si invalide. */
+function pickedPoint() {
+  const lat = Number($('#zone-lat').value);
+  const lon = Number($('#zone-lon').value);
+  const radius = Number($('#zone-radius').value) || 100;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+    toast('Coordonnées invalides : latitude entre -90 et 90, longitude entre -180 et 180.', 'error');
+    return null;
+  }
+  const typed = ($('#zone-label').value || '').trim();
+  const label = typed || `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
+  return { lat: Math.round(lat * 1000) / 1000, lon: Math.round(lon * 1000) / 1000, radius, label };
+}
+
+function setZoneInputs(lat, lon, label = '') {
+  $('#zone-lat').value = Number(lat).toFixed(2);
+  $('#zone-lon').value = Number(lon).toFixed(2);
+  if (label) $('#zone-label').value = label;
+}
+
+/** Rayon du direct : ajoute l'option si le rayon demandé n'y figure pas. */
+function setLiveRadius(nm) {
+  const select = $('#live-radius');
+  if (!select) return;
+  const value = String(nm);
+  if (![...select.options].some((o) => o.value === value)) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = `${nm} NM`;
+    select.appendChild(opt);
+  }
+  select.value = value;
+  readLiveOptions();
+}
+
+function armZonePick(armed) {
+  const btn = $('#zone-pick');
+  if (!btn) return;
+  btn.setAttribute('aria-pressed', armed ? 'true' : 'false');
+  btn.textContent = armed ? 'Cliquez sur la carte…' : 'Choisir sur la carte';
+}
+
+/** Direct autour d'un point quelconque (relais public, sans installation). */
+async function liveAroundPoint(point) {
+  const details = document.querySelector('details.live-direct');
+  if (details) details.open = true;
+  mapView.centerOn(point.lat, point.lon, zoomForRadius(point.radius));
+  setLiveRadius(point.radius);
+  const live = liveState();
+  if (!live.active) startLive();
+  else pollLive();
+  $('#zone-status').textContent = `Direct autour de ${point.label} — relais public en cours…`;
+}
+
+/** Ligne JSON à coller dans docs/data/live-zones.json. */
+function zoneSnippet(zone) {
+  const label = zone.label.replace(/"/g, '\\"');
+  return `    { "id": "${zoneSlug(zone.lat, zone.lon)}", "label": "${label}", "lat": ${zone.lat}, "lon": ${zone.lon}, "radius": ${zone.radius} },`;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1613,6 +1761,19 @@ async function buildLiveDataset() {
 /* Initialisation                                                              */
 /* -------------------------------------------------------------------------- */
 
+/** Copie dans le presse-papiers ; false si le navigateur refuse (contexte non sécurisé). */
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* on laisse la copie manuelle */
+  }
+  return false;
+}
+
 function bindEvents() {
   $('#btn-import').onclick = () => {
     refreshImportOptions();
@@ -1686,6 +1847,31 @@ function bindEvents() {
   $('#live-build').onclick = () => buildLiveDataset();
 
   $('#snapshot-zone').onchange = () => loadSnapshot($('#snapshot-zone').value);
+
+  // Sélecteur universel : n'importe quel point du globe
+  $('#zone-pick').onclick = () =>
+    armZonePick($('#zone-pick').getAttribute('aria-pressed') !== 'true');
+  $('#zone-live').onclick = async () => {
+    const point = pickedPoint();
+    if (point) await liveAroundPoint(point);
+  };
+  $('#zone-add').onclick = async () => {
+    const point = pickedPoint();
+    if (!point) return;
+    const snippet = zoneSnippet(point);
+    const pre = $('#zone-snippet');
+    pre.hidden = false;
+    pre.textContent = snippet;
+    const copied = await copyText(snippet);
+    $('#zone-add-lead').textContent = copied ? 'Ligne copiée.' : 'Copiez cette ligne :';
+    $('#zone-add-hint').hidden = false;
+    toast(
+      copied
+        ? 'Ligne de zone copiée — collez-la dans docs/data/live-zones.json.'
+        : 'Ligne de zone prête : copiez-la depuis le cadre.',
+      copied ? 'info' : 'error'
+    );
+  };
   $('#snapshot-window').onchange = () => updateSnapshotUi();
   $('#snapshot-map').onclick = () => renderSnapshotMap();
   $('#snapshot-load').onclick = () => buildSnapshotDataset();
@@ -1855,6 +2041,15 @@ async function init() {
       document.querySelector('#tabs button[data-view="aircraft"]').click();
       selectAircraft(key);
     },
+    onMapClick: (latlng) => {
+      if ($('#zone-pick').getAttribute('aria-pressed') !== 'true') return;
+      setZoneInputs(latlng.lat, latlng.lng);
+      armZonePick(false);
+      $('#zone-status').textContent =
+        `Point choisi sur la carte : ${latlng.lat.toFixed(2)}, ${latlng.lng.toFixed(2)} — ` +
+        'cliquez sur « Voir le trafic en direct » ou « Ajouter au relevé ».';
+      toast('Point choisi. Choisissez ensuite le direct ou ajoutez la zone au relevé.');
+    },
   });
 
   bindEvents();
@@ -1865,7 +2060,7 @@ async function init() {
   // 1. le relevé réel d'abord : c'est la vue par défaut
   let opened = false;
   try {
-    await loadSnapshot('dakar');
+    await loadSnapshot();
     opened = await maybeAutoOpenSnapshot();
   } catch (err) {
     console.warn('Relevé automatique indisponible :', err);

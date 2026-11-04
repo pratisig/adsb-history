@@ -21,6 +21,7 @@ import {
   snapshotTraffic,
   snapshotUrl,
   snapshotCandidates,
+  snapshotIndexCandidates,
   extractJson,
   relayUrl,
   RELAYS,
@@ -418,6 +419,43 @@ async function main() {
     );
     check('snapshotUrl : URL du relevé publié', /raw\.githubusercontent\.com/.test(snapshotUrl('dakar')) && snapshotUrl('dakar').endsWith('/data/dakar.json'));
     check('snapshotCandidates : miroir puis copie locale', snapshotCandidates('dakar').length === 3);
+    const indexUrls = snapshotIndexCandidates();
+    check(
+      'snapshotIndexCandidates : liste des zones lisible même sans relevé',
+      indexUrls.includes('data/live-zones.json'),
+      indexUrls.join(' ')
+    );
+
+    // Zones déclarées : c'est le seul endroit à modifier pour relever un autre coin du monde.
+    const zonesConfig = JSON.parse(
+      await readFile(new URL('../data/live-zones.json', import.meta.url), 'utf8')
+    );
+    const zones = zonesConfig.zones || [];
+    check('live-zones.json : au moins une zone déclarée', zones.length > 0);
+    check(
+      'live-zones.json : champs obligatoires',
+      zones.every(
+        (z) =>
+          typeof z.id === 'string' &&
+          /^[a-z0-9-]+$/.test(z.id) &&
+          typeof z.label === 'string' &&
+          Number.isFinite(z.lat) &&
+          Number.isFinite(z.lon) &&
+          Number.isFinite(z.radius)
+      )
+    );
+    check(
+      'live-zones.json : identifiants uniques',
+      new Set(zones.map((z) => z.id)).size === zones.length
+    );
+    check(
+      'live-zones.json : coordonnées valides',
+      zones.every((z) => Math.abs(z.lat) <= 90 && Math.abs(z.lon) <= 180 && z.radius > 0 && z.radius <= 500)
+    );
+    check(
+      'live-zones.json : zones du monde entier, pas seulement le Sénégal',
+      zones.some((z) => Math.abs(z.lat) > 30 || Math.abs(z.lon) > 30)
+    );
 
     const relayed = await fetchLive({
       lat: 14.74,

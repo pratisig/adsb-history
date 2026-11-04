@@ -114,6 +114,12 @@ export class MapView {
     let start = null;
     let temp = null;
 
+    // clic simple : sert au sélecteur de point universel (carte 5)
+    map.on('click', (e) => {
+      if (this.drawEnabled) return;
+      if (this.handlers.onMapClick) this.handlers.onMapClick(e.latlng);
+    });
+
     map.on('mousedown', (e) => {
       if (!this.drawEnabled) return;
       this.clearBbox();

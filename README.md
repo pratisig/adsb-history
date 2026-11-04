@@ -16,9 +16,12 @@ For more information and background, see [the associated presentation at WHY2025
 > it polls the public ADS-B APIs (adsb.lol, adsb.fi, OpenSky) every 30 s for the zones listed in
 > [`docs/data/live-zones.json`](docs/data/live-zones.json) and publishes the result on the `live`
 > branch, so the page opens on **real aircraft, real trails and a real queryable history** with no
-> archive and no API key. In the browser, OpenSky can also be queried directly (it is the only
-> public ADS-B API that sends CORS headers); the app keeps track of its 400 daily credits. (Those APIs send no CORS headers, so a browser cannot call them
-> directly — hence the workflow.) You can still drop a `globe_history` archive / CSV on the page.
+> archive and no API key. **The zone list is not fixed**: one line in that JSON file
+> (`{ "id": "casablanca", "label": "Casablanca", "lat": 33.57, "lon": -7.59, "radius": 100 }`)
+> adds any place on Earth, and the page has a picker that builds that line for you. For
+> **current** traffic at an arbitrary point, the browser goes through a public CORS relay
+> (none of these APIs — OpenSky included — sends CORS headers to a browser, so a relay is the only
+> option). You can still drop a `globe_history` archive / CSV on the page.
 > Draw an area, filter by time / altitude / speed / callsign, inspect each aircraft's track,
 > export CSV — the query engine itself runs locally in the browser.
 >
