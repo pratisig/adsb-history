@@ -755,29 +755,62 @@ function setImportFiles(files) {
   $('#file-list').textContent = state.importFiles.length
     ? `${state.importFiles.map((f) => f.name).join(', ')} — ${formatBytes(total)}`
     : 'Aucun fichier sélectionné';
-  $('#import-start').disabled = !state.importFiles.length;
+  updateImportStartState();
+}
+
+function updateImportStartState() {
+  const hasUrl = !!($('#import-url').value || '').trim();
+  $('#import-start').disabled = !state.importFiles.length && !hasUrl;
+  const readonly = hasUrl && !state.importFiles.length;
+  $('#import-zone').disabled = false;
+  void readonly;
 }
 
 async function startImport() {
+  const url = ($('#import-url').value || '').trim();
   const files = state.importFiles;
-  if (!files.length) return;
-  const zone = $('#import-zone').value;
-  const bbox = zone === 'view' ? mapView.getViewBbox() : null;
+  if (!files.length && !url) {
+    toast('Choisissez un fichier ou collez une URL de téléchargement.', 'error');
+    return;
+  }
+
+  const bbox = $('#import-zone').value === 'view' ? mapView.getViewBbox() : null;
   const minIntervalSec = Number($('#import-sampling').value);
   const maxPoints = Number($('#import-limit').value);
   const progress = $('#import-progress');
   const fill = $('#import-progress-fill');
   const label = $('#import-progress-label');
+  const options = { bbox, minIntervalSec, maxPoints };
+
   progress.hidden = false;
   $('#import-start').disabled = true;
   $('#import-cancel').textContent = 'Annuler';
 
-  const isCsv = files.length === 1 && /\.(csv|txt)$/i.test(files[0].name);
+  const onProgress = (p) => {
+    const parts = [];
+    if (p.points !== undefined) parts.push(`${nf.format(p.points)} positions`);
+    if (p.received) parts.push(`${formatBytes(p.received)} reçus`);
+    if (p.files) parts.push(`${p.files} fichier(s)`);
+    if (p.name) parts.push(p.name.split('/').pop());
+    label.textContent = parts.join(' · ') || 'Lecture…';
+    const ratio = p.ratio ?? (p.points !== undefined ? Math.min(1, p.points / maxPoints) : 0);
+    fill.style.width = `${Math.max(4, ratio * 100).toFixed(1)}%`;
+  };
+
+  const isCsv = !url && files.length === 1 && /\.(csv|txt)$/i.test(files[0].name);
 
   try {
     let ds;
     let name;
-    if (isCsv) {
+    let source;
+
+    if (url) {
+      const result = await runUrlImport(url, options, onProgress);
+      ds = result.dataset;
+      name = result.name;
+      source = result.source;
+      fill.style.width = '100%';
+    } else if (isCsv) {
       label.textContent = 'Lecture du CSV…';
       fill.style.width = '30%';
       const text = await files[0].text();
@@ -785,98 +818,145 @@ async function startImport() {
       if (!rows.length) throw new Error('Aucune position lisible dans ce CSV.');
       ds = datasetFromRows(rows.slice(0, maxPoints), { source: 'csv', minIntervalSec });
       name = files[0].name;
+      source = 'csv';
       fill.style.width = '90%';
     } else {
-      const onProgress = (p) => {
-        const ratio = p.ratio ?? Math.min(1, p.points / maxPoints);
-        fill.style.width = `${Math.max(4, ratio * 100).toFixed(1)}%`;
-        label.textContent = `${p.files || 0} fichier(s) · ${nf.format(p.points)} positions${
-          p.name ? ` · ${p.name.split('/').pop()}` : ''
-        }`;
-      };
       let result;
       try {
-        result = await runWorkerImport(files, { bbox, minIntervalSec, maxPoints }, onProgress);
+        result = await runWorkerImport({ files }, options, onProgress);
       } catch (err) {
         if (!/Worker|module|import/i.test(err.message)) throw err;
         toast('Import en mode compatibilité (plus lent)…');
-        result = await runMainThreadImport(files, { bbox, minIntervalSec, maxPoints }, onProgress);
+        result = await runMainThreadImport(files, options, onProgress);
       }
       ds = result.dataset;
       name = files.map((f) => f.name).join(' + ');
+      source = 'heatmap';
       fill.style.width = '100%';
     }
 
-    if (!ds.n) throw new Error("Aucune position ADS-B n'a été trouvée dans ces fichiers.");
-
-    let target = $('#import-target').value;
-    if (target === 'merge' && !state.active) target = 'new';
-    if (target === 'merge' && state.meta && state.meta.synthetic) target = 'new';
-    if (target === 'merge') {
-      label.textContent = 'Fusion avec le jeu de données actif…';
-      const before = state.active;
-      const beforeId = state.activeId;
-      const beforeMeta = { ...state.meta };
-      ds = mergeDatasets(before, ds);
-      name = `${beforeMeta.name} + ${name}`;
-      state.pendingMergeId = beforeId;
-      state.pendingMergeMeta = beforeMeta;
-    }
-
-    const stats = describeDataset(ds);
-    const id = target === 'merge' ? state.pendingMergeId : `imp-${Date.now()}`;
-    const meta = {
-      id,
-      name: name.length > 70 ? `${name.slice(0, 67)}…` : name,
-      source: isCsv ? 'csv' : 'heatmap',
-      synthetic: false,
-      count: stats.count,
-      aircraft: stats.aircraft,
-      tMin: stats.tMin,
-      tMax: stats.tMax,
-      importedAt: Date.now(),
-      bbox: target === 'merge' ? (state.pendingMergeMeta.bbox ?? bbox) : bbox,
-    };
-
-    label.textContent = 'Enregistrement local (IndexedDB)…';
-    try {
-      await persistDataset(id, meta, ds);
-    } catch (err) {
-      toast("Jeu de données trop volumineux pour être conservé après rechargement : il reste disponible pour cette session.", 'error');
-    }
-
-    const existing = state.datasets.findIndex((d) => d.id === id);
-    if (existing >= 0) state.datasets[existing] = meta;
-    else state.datasets.push(meta);
-    state.cache.set(id, { ds, meta, stats });
-    await refreshDatasetList();
-    closeModal('#import-dialog');
-    setImportFiles([]);
+    await finalizeImport(ds, name, { bbox, source });
     progress.hidden = true;
     fill.style.width = '0%';
-    $('#import-start').disabled = false;
-    await activateDataset(id);
-    toast(
-      `${target === 'merge' ? 'Fusion terminée' : 'Import terminé'} : ${nf.format(
-        stats.count
-      )} positions, ${nf.format(stats.aircraft)} aéronefs, ${formatTime(stats.tMin)} → ${formatTime(
-        stats.tMax
-      )} UTC.`
-    );
   } catch (err) {
     progress.hidden = true;
     fill.style.width = '0%';
-    $('#import-start').disabled = false;
     label.textContent = '';
     toast(`Import impossible : ${err.message}`, 'error');
     console.error(err);
   } finally {
     $('#import-cancel').textContent = 'Annuler';
+    $('#import-start').disabled = false;
     if (state.worker) {
       state.worker.terminate();
       state.worker = null;
     }
   }
+}
+
+/** Enregistre (ou fusionne) le jeu de données importé puis l'active. */
+async function finalizeImport(ds, name, { bbox, source = 'heatmap' }) {
+  if (!ds.n) throw new Error("Aucune position ADS-B n'a été trouvée dans ces données.");
+
+  const fill = $('#import-progress-fill');
+  const label = $('#import-progress-label');
+
+  let target = $('#import-target').value;
+  if (target === 'merge' && !state.active) target = 'new';
+  if (target === 'merge' && state.meta && state.meta.synthetic) target = 'new';
+
+  let mergeId = null;
+  let mergeMeta = null;
+  if (target === 'merge') {
+    label.textContent = 'Fusion avec le jeu de données actif…';
+    mergeId = state.activeId;
+    mergeMeta = { ...state.meta };
+    ds = mergeDatasets(state.active, ds);
+    name = `${mergeMeta.name} + ${name}`;
+  }
+
+  const stats = describeDataset(ds);
+  const id = mergeId || `imp-${Date.now()}`;
+  const meta = {
+    id,
+    name: name.length > 70 ? `${name.slice(0, 67)}…` : name,
+    source,
+    synthetic: false,
+    count: stats.count,
+    aircraft: stats.aircraft,
+    tMin: stats.tMin,
+    tMax: stats.tMax,
+    importedAt: Date.now(),
+    bbox: mergeMeta ? (mergeMeta.bbox ?? bbox) : bbox,
+  };
+
+  label.textContent = 'Enregistrement local (IndexedDB)…';
+  try {
+    await persistDataset(id, meta, ds);
+  } catch (err) {
+    toast(
+      "Jeu de données trop volumineux pour être conservé après rechargement : il reste disponible pour cette session.",
+      'error'
+    );
+  }
+
+  const existing = state.datasets.findIndex((d) => d.id === id);
+  if (existing >= 0) state.datasets[existing] = meta;
+  else state.datasets.push(meta);
+  state.cache.set(id, { ds, meta, stats });
+
+  await refreshDatasetList();
+  closeModal('#import-dialog');
+  setImportFiles([]);
+  $('#import-url').value = '';
+  $('#import-progress').hidden = true;
+  fill.style.width = '0%';
+  await activateDataset(id);
+
+  toast(
+    `${target === 'merge' ? 'Fusion terminée' : 'Import terminé'} : ${nf.format(
+      stats.count
+    )} positions, ${nf.format(stats.aircraft)} aéronefs, ${formatTime(stats.tMin)} → ${formatTime(
+      stats.tMax
+    )} UTC.`
+  );
+}
+
+/** Import direct depuis une URL (archive tar ou CSV), en flux. */
+async function runUrlImport(url, options, onProgress) {
+  let response;
+  try {
+    response = await fetch(url, { mode: 'cors', redirect: 'follow' });
+  } catch (err) {
+    throw new Error(
+      "téléchargement direct bloqué par le site distant (CORS) ou par le réseau. " +
+        'Téléchargez le fichier puis déposez-le dans la zone ci-dessus.'
+    );
+  }
+  if (!response.ok) throw new Error(`le serveur a répondu HTTP ${response.status}.`);
+  if (!response.body) throw new Error("ce navigateur ne sait pas lire cette URL en flux.");
+
+  let fileName = 'archive.tar';
+  try {
+    fileName = decodeURIComponent(new URL(url, location.href).pathname.split('/').pop()) || fileName;
+  } catch (err) {
+    /* URL exotique : on garde le nom par défaut */
+  }
+  const totalBytes = Number(response.headers.get('content-length')) || null;
+
+  if (/\.(csv|txt)$/i.test(fileName)) {
+    const text = await response.text();
+    const { rows } = parseCsv(text, { limit: options.maxPoints });
+    if (!rows.length) throw new Error('aucune position lisible dans ce CSV.');
+    return {
+      dataset: datasetFromRows(rows, { source: 'csv', minIntervalSec: options.minIntervalSec }),
+      name: fileName,
+      source: 'csv',
+    };
+  }
+
+  const result = await runWorkerImport({ stream: response.body, totalBytes }, options, onProgress);
+  return { dataset: result.dataset, name: fileName, source: 'url' };
 }
 
 async function runMainThreadImport(files, options, onProgress) {
@@ -901,7 +981,7 @@ async function runMainThreadImport(files, options, onProgress) {
   };
 }
 
-function runWorkerImport(files, options, onProgress) {
+function runWorkerImport(target, options, onProgress) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./import-worker.js', import.meta.url), { type: 'module' });
     state.worker = worker;
@@ -912,7 +992,19 @@ function runWorkerImport(files, options, onProgress) {
       else if (msg.type === 'error') reject(new Error(msg.message));
     };
     worker.onerror = (event) => reject(new Error(event.message || 'Erreur du worker'));
-    worker.postMessage({ type: 'start', files, options });
+
+    try {
+      if (target.stream) {
+        worker.postMessage(
+          { type: 'start-stream', stream: target.stream, totalBytes: target.totalBytes, options },
+          [target.stream]
+        );
+      } else {
+        worker.postMessage({ type: 'start', files: target.files, options });
+      }
+    } catch (err) {
+      reject(new Error(`flux non transférable vers le worker (${err.message})`));
+    }
   });
 }
 
@@ -1051,6 +1143,7 @@ function bindEvents() {
   // import
   $('#file-input').onchange = (e) => setImportFiles(e.target.files);
   $('#import-limit').onchange = refreshImportOptions;
+  $('#import-url').oninput = updateImportStartState;
   $('#import-start').onclick = startImport;
   $('#import-cancel').onclick = () => {
     if (state.worker) {

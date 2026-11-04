@@ -54,6 +54,24 @@ jours parce qu'elle est simulée ; vos imports réels peuvent couvrir plusieurs 
 
 ## 3. Importer de vraies données ADS-B
 
+### 3.0 D'où viennent les données ?
+
+Le site ne contient **aucune** donnée réelle : il n'affiche que ce que vous y chargez. Trois
+sources possibles :
+
+| Source | Ce que vous obtenez | Poids | Comment l'importer |
+| --- | --- | --- | --- |
+| **[Archives adsb.lol](https://github.com/adsblol/globe_history_2025/releases)** | toutes les positions ADS-B mondiales, **1 jour par archive** | ≈ 3 Go / jour (`.tar.aa` + `.tar.ab`) | glisser-déposer **ou** coller l'URL de téléchargement |
+| **CSV** (export OpenSky, dump1090/tar1090, votre récepteur, relevé perso) | les positions que vous avez | quelques Ko → centaines de Mo | glisser-déposer |
+| **Turnstone complet** (PostgreSQL/PostGIS) | des mois, voire des années | — | hors navigateur (voir le README principal) |
+
+**Pour démarrer sans télécharger 3 Go**, le plus simple est un CSV : un export OpenSky pour un
+aéronef et une journée pèse quelques centaines de Ko et s'importe en une seconde.
+
+**Recommandation pour une première archive adsb.lol** : prenez une seule journée, sélectionnez
+la zone *« zone visible de la carte »* (par exemple le Sénégal) et gardez 1 point/minute →
+quelques dizaines de milliers de positions seulement, import en une à deux minutes.
+
 ### 3.1 Archives `globe_history` (recommandé)
 
 Les données historiques mondiales au format tar1090 sont publiées chaque jour par adsb.lol :
@@ -72,6 +90,12 @@ Pour une journée, téléchargez les fichiers `.tar.aa`, `.tar.ab`, … (archive
 
 L'archive est lue **en flux** dans un Web Worker : rien n'est uploadé, et un fichier de
 plusieurs gigaoctets n'est jamais chargé d'un coup en mémoire.
+
+Alternative : collez l'**URL directe** de l'archive dans le champ « importer depuis une URL »
+de la fenêtre d'import — le fichier est téléchargé et décodé en flux, sans passer par le disque.
+Certains serveurs (dont parfois GitHub) refusent le téléchargement direct depuis un navigateur
+pour des raisons de CORS : dans ce cas le message vous invite à télécharger le fichier
+manuellement.
 
 **Conseils de volume** : une journée mondiale complète représente plusieurs dizaines de
 millions de positions — trop pour un navigateur. Limitez la zone (un pays, une FIR) et gardez
@@ -137,6 +161,7 @@ Règles pratiques :
 | **Chronologie** | histogramme des positions et du nombre d'aéronefs dans la sélection |
 | **Export** | CSV des positions filtrées et CSV de la synthèse par aéronef |
 | **Cumul** | import jour par jour fusionné dans un même jeu de données (couverture multi-jours) |
+| **Import URL** | téléchargement + décodage en flux d'une archive depuis son adresse (si CORS autorisé) |
 | **Stockage** | jeux de données importés conservés localement (IndexedDB), suppression possible |
 
 Tout est calculé côté client : `filtrage → agrégation → rendu` en quelques dizaines de

@@ -9,7 +9,7 @@ import { ColumnBuilder } from './dataset.js';
 
 self.onmessage = async (event) => {
   const msg = event.data;
-  if (msg.type !== 'start') return;
+  if (msg.type !== 'start' && msg.type !== 'start-stream') return;
   try {
     await run(msg);
   } catch (err) {
@@ -17,12 +17,22 @@ self.onmessage = async (event) => {
   }
 };
 
-async function run({ files, options }) {
+async function run(msg) {
+  const { options } = msg;
   const { bbox = null, minIntervalSec = 60, maxPoints = 3000000 } = options || {};
   const builder = new ColumnBuilder();
-  const blob = files.length === 1 ? files[0] : new Blob(files);
-  const total = blob.size;
-  const stream = blob.stream();
+  let stream;
+  let total;
+  if (msg.type === 'start-stream') {
+    // flux déjà ouvert par le thread principal (import depuis une URL)
+    stream = msg.stream;
+    total = msg.totalBytes || null;
+  } else {
+    const { files } = msg;
+    const blob = files.length === 1 ? files[0] : new Blob(files);
+    stream = blob.stream();
+    total = blob.size;
+  }
   let lastPost = 0;
   let fileCount = 0;
   let truncated = false;
@@ -52,6 +62,7 @@ async function run({ files, options }) {
           name: progress.name,
           ratio: progress.ratio,
           bytes: progress.bytes,
+          received: progress.bytes,
           totalBytes: total,
           points: builder.size,
         });

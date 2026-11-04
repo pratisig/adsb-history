@@ -282,6 +282,43 @@
         </p>
         </div>
 
+        <label class="field">
+          <span>…ou importer directement depuis une URL (archive <code>.tar</code>)</span>
+          <input
+            type="url"
+            id="import-url"
+            placeholder="https://github.com/adsblol/globe_history_2025/releases/download/…/v2025.10.28-planes-readsb-prod-0.tar.aa"
+            autocomplete="off"
+          />
+        </label>
+        <p class="hint">
+          Le fichier est lu en flux, sans être enregistré sur le disque. Si le serveur distant
+          refuse le téléchargement direct (CORS), téléchargez-le puis déposez-le ci-dessus.
+        </p>
+
+        <details class="guide">
+          <summary>Où trouver des données réelles ?</summary>
+          <ol>
+            <li>
+              <strong>Archives mondiales adsb.lol</strong> — la source utilisée par Turnstone :
+              <a href="https://github.com/adsblol/globe_history_2025/releases" target="_blank" rel="noreferrer"
+                >github.com/adsblol/globe_history_2025/releases</a
+              >. Une journée ≈ 3 Go (fichiers <code>.tar.aa</code> + <code>.tar.ab</code>,
+              téléchargez les deux). Sélectionnez la zone <em>« zone visible »</em> et
+              1 point/minute pour ne garder que votre région.
+            </li>
+            <li>
+              <strong>CSV</strong> — tout fichier contenant au moins <code>lat</code> et
+              <code>lon</code> : export OpenSky, dump d'un récepteur tar1090/dump1090, relevé
+              personnel…
+            </li>
+            <li>
+              <strong>Cumuler</strong> — pour couvrir plusieurs jours, choisissez
+              « Ajouter au jeu de données actif » à chaque import.
+            </li>
+          </ol>
+        </details>
+
         <div class="field-pair">
           <label class="field">
             <span>Zone à importer</span>
