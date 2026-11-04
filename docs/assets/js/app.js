@@ -1187,11 +1187,11 @@ function renderSnapshotMap({ silent = false } = {}) {
  */
 async function maybeAutoOpenSnapshot() {
   const snap = snapshotState();
-  if (!snap.data || !snap.data.samples.length) return;
-  if (state.activeId && state.activeId !== 'demo') return;
+  if (!snap.data || !snap.data.samples.length) return false;
+  if (state.activeId && state.activeId !== 'demo') return false;
   const label = (snap.data.zone && snap.data.zone.label) || snap.zoneId;
   const rows = snapshotRows(snap.data, null);
-  if (!rows.length) return;
+  if (!rows.length) return false;
   try {
     const ds = datasetFromRows(rows, { source: 'live' });
     const stats = describeDataset(ds);
@@ -1217,8 +1217,10 @@ async function maybeAutoOpenSnapshot() {
       `Relevé réel chargé : ${nf.format(stats.aircraft)} aéronefs, ${nf.format(stats.count)} positions ` +
         `(${label}). Choisissez « Démonstration » dans la liste pour revenir aux données simulées.`
     );
+    return true;
   } catch (err) {
     console.warn('Ouverture automatique du relevé impossible :', err);
+    return false;
   }
 }
 
@@ -1840,8 +1842,19 @@ async function init() {
   bindEvents();
   state.cache = new Map();
   updateSnapshotUi();
-  loadSnapshot('dakar');
+  updateLiveUi();
 
+  // 1. le relevé réel d'abord : c'est la vue par défaut
+  let opened = false;
+  try {
+    await loadSnapshot('dakar');
+    opened = await maybeAutoOpenSnapshot();
+  } catch (err) {
+    console.warn('Relevé automatique indisponible :', err);
+  }
+  if (opened) return;
+
+  // 2. à défaut, la démonstration simulée (chargée à la demande)
   try {
     const demo = await loadDemo();
     state.cache.set('demo', demo);
@@ -1863,14 +1876,6 @@ async function init() {
         : '';
     toast(`Chargement de la démo impossible : ${err.message}.${hint}`, 'error');
     setLoading(false);
-  } finally {
-    // si un relevé réel est disponible, il devient la vue par défaut — même si la démo a échoué
-    try {
-      await maybeAutoOpenSnapshot();
-    } catch (err) {
-      console.warn('Ouverture automatique du relevé impossible :', err);
-    }
   }
 }
-
 init();
