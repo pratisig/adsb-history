@@ -30,7 +30,7 @@ import {
   BROWSER_PROVIDERS,
   OPENSKY_DAILY_CREDITS,
 } from '../assets/js/live.js';
-import { collect as collectSnapshot } from '../tools/live-snapshot.mjs';
+import { collect as collectSnapshot, parseArgs } from '../tools/live-snapshot.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 let failures = 0;
@@ -446,6 +446,13 @@ async function main() {
     check(
       'fournisseurs navigateur : OpenSky d’abord (seul à envoyer CORS)',
       BROWSER_PROVIDERS[0].id === 'opensky' && BROWSER_PROVIDERS.length === 4
+    );
+
+    const parsedArgs = parseArgs(['--loop-minutes=7', '--poll-seconds=30', '--out', 'data', '--seed']);
+    check(
+      'arguments du workflow lus (--clé=valeur)',
+      parsedArgs['loop-minutes'] === '7' && parsedArgs['poll-seconds'] === '30' && parsedArgs.out === 'data' && parsedArgs.seed === true,
+      JSON.stringify(parsedArgs)
     );
 
     /* Collecte côté serveur : écriture d'un relevé à partir d'une API simulée. */
