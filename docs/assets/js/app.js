@@ -1580,6 +1580,21 @@ function bindEvents() {
   };
 
   $('#live-toggle').onclick = () => (liveState().active ? stopLive() : startLive());
+  $('#live-refresh').onclick = async () => {
+    const live = liveState();
+    if (live.busy) return;
+    live.busy = true;
+    try {
+      const res = await probeDirect();
+      toast(`Actualisé via ${res.provider} : ${nf.format(res.points.length)} aéronefs autour de la carte.`);
+    } catch (err) {
+      live.error = err.message;
+      toast(`Actualisation impossible : ${err.message}`, 'error');
+    } finally {
+      live.busy = false;
+      updateLiveUi();
+    }
+  };
   $('#live-dakar').onclick = () => {
     mapView.centerOn(14.7397, -17.4902, 9);
     toast('Carte centrée sur Dakar (Yoff).');

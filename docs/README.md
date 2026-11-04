@@ -64,8 +64,8 @@ OpenSky est la seule API ADS-B publique qui autorise les appels **depuis un navi
 
 1. cadrez la zone voulue (bouton **Dakar** pour y aller directement) ;
 2. choisissez le **rayon** et le **rafraîchissement** (1 à 15 min) ;
-3. cliquez sur **Activer** — les aéronefs réels apparaissent, avec indicatifs, altitudes,
-   vitesses, traînées et statut militaire.
+3. cliquez sur **Actualiser** (une relève) ou **Activer** (relève répétée) — les aéronefs réels
+   apparaissent, avec indicatifs, altitudes, vitesses, traînées et statut militaire.
 
 Au chargement de la page, si aucun relevé récent n'est disponible, une relève directe est faite
 automatiquement : la carte montre du trafic réel sans rien cliquer.
@@ -95,8 +95,12 @@ quelques minutes de décalage : GitHub espace les exécutions planifiées.
 
 > Pour ajouter une zone, éditez `docs/data/live-zones.json` (identifiant, libellé, latitude,
 > longitude, rayon en NM) — le prochain passage s'en occupe.
-> Si l'onglet **Actions** du dépôt affiche « Workflows aren't running on this fork », cliquez une
-> fois sur *I have read and I understand my workflows, go ahead and enable them*.
+> **Rafraîchissement automatique** : sur un fork, GitHub n'exécute pas les workflows planifiés
+> tant qu'on ne l'a pas autorisé une fois. Si l'onglet **Actions** affiche « Workflows aren't
+> running on this fork », cliquez sur *I have read and I understand my workflows, go ahead and
+> enable them* : le relevé se mettra alors à jour toutes les 10 minutes. Sans cela, il se
+> rafraîchit à chaque modification du dépôt — et la page complète d'elle-même avec une relève
+> directe OpenSky dès que le relevé date de plus de 15 minutes.
 
 ### c) Pourquoi pas les autres fournisseurs ?
 
