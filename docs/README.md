@@ -67,8 +67,8 @@ publiques depuis un runner — donc hors navigateur — pour les zones de
 - une relève **toutes les 30 s**, fenêtre glissante de **3 heures**, cascade `adsb.lol` →
   `adsb.fi` → `OpenSky` ;
 - publication du résultat sur la branche `live` (JSON compact, ≈ 100 Ko par zone) ;
-- après chaque modification du dépôt, **5 passes de 8 minutes** (≈ 40 min de relevé continu) ;
-  en exécution planifiée, une passe de 8 minutes.
+- après chaque modification du dépôt, **3 passes de 8 minutes** (≈ 24 min de relevé continu,
+  publication après chaque passe) ; en exécution planifiée, une passe de 8 minutes.
 
 Dans la carte : choisissez la **zone** et la **fenêtre** (30 min, 1 h, 3 h ou tout le relevé),
 puis **Afficher sur la carte** (dernière position + traînée) ou **Explorer l'historique réel**
