@@ -9,6 +9,16 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { readTarStream, parseHeatmapBuffer, parseCsv } from '../assets/js/parse.js';
+import {
+  parseWorld,
+  distanceNm,
+  filterByPoint,
+  filterByBbox,
+  countryBbox,
+  searchAirports,
+  rowsToDataset,
+  WORLD_FIELDS,
+} from '../assets/js/world.js';
 import { datasetFromDemoJson, datasetFromRows, describeDataset, mergeDatasets } from '../assets/js/dataset.js';
 import { queryDataset, aggregateByAircraft, buildTimeline, resultsToCsv } from '../assets/js/query.js';
 import {
@@ -419,6 +429,66 @@ async function main() {
     );
     check('snapshotUrl : URL du relevé publié', /raw\.githubusercontent\.com/.test(snapshotUrl('dakar')) && snapshotUrl('dakar').endsWith('/data/dakar.json'));
     check('snapshotCandidates : miroir puis copie locale', snapshotCandidates('dakar').length === 3);
+    // --- photo mondiale : tous les pays, tous les aéroports ------------------
+    const worldRaw = {
+      updated: '2026-11-05T18:00:00.000Z',
+      source: 'adsb.lol',
+      fields: WORLD_FIELDS,
+      samples: [
+        [1762366800, 'aaaaaa', 'AFR001', 'F-GAAA', 'B738', 48.9, 2.4, 30000, 450, 90],
+        [1762366800, 'bbbbbb', 'RAM200', 'CN-RAM', 'B788', 33.6, -7.6, 35000, 470, 200],
+        [1762366800, 'cccccc', 'SZN001', '6V-AAA', 'A319', 14.75, -17.48, 12000, 300, 180],
+        [1762366800, 'dddddd', '', '', '', 35.6, 139.7, 38000, 480, 45],
+      ],
+    };
+    const world = parseWorld(worldRaw);
+    check('monde : photo lue', world && world.rows.length === 4, String(world && world.rows.length));
+    check('monde : aéronefs comptés', world.aircraft === 4);
+    check('monde : date de la photo', world.at === 1762366800);
+    check('monde : champs absents tolérés', world.rows[3].flight === null && world.rows[3].reg === null);
+    check('monde : payload vide ignoré', parseWorld({}) === null);
+
+    const dkr = { lat: 14.67, lon: -17.07 };
+    const distCm = distanceNm(dkr.lat, dkr.lon, 33.6, -7.6);
+    check('monde : distance DKR → Casablanca ≈ 1 180 NM', Math.abs(distCm - 1180) < 120, String(Math.round(distCm)));
+    const nearDkr = filterByPoint(world, dkr.lat, dkr.lon, 100);
+    check('monde : filtre par aéroport (rayon)', nearDkr.length === 1 && nearDkr[0].hex === 'cccccc');
+
+    const airports = [
+      { iata: 'DKR', name: 'Blaise Diagne', city: 'Dakar', cc: 'SN', lat: 14.67, lon: -17.07 },
+      { iata: 'CMN', name: 'Mohammed V', city: 'Casablanca', cc: 'MA', lat: 33.37, lon: -7.59 },
+      { iata: 'HND', name: 'Haneda', city: 'Tokyo', cc: 'JP', lat: 35.55, lon: 139.78 },
+    ];
+    check('monde : recherche par code IATA', searchAirports(airports, 'cmn')[0].iata === 'CMN');
+    check('monde : recherche par ville', searchAirports(airports, 'casablanca')[0].iata === 'CMN');
+    check('monde : recherche sans résultat', searchAirports(airports, 'zzz').length === 0);
+    const maBbox = countryBbox(airports, 'MA');
+    check(
+      'monde : boîte du pays calculée',
+      maBbox[0] < 33.37 && maBbox[2] > 33.37 && maBbox[1] < -7.59 && maBbox[3] > -7.59,
+      String(maBbox)
+    );
+    const inMorocco = filterByBbox(world, maBbox);
+    check('monde : filtre par pays', inMorocco.length === 1 && inMorocco[0].hex === 'bbbbbb');
+    check('monde : pays sans aéroport', countryBbox(airports, 'XX') === null);
+    check(
+      'monde : conversion en lignes de jeu de données',
+      rowsToDataset(world.rows).every((r) => Number.isFinite(r.lat) && Number.isFinite(r.lon))
+    );
+
+    const catalog = JSON.parse(await readFile(new URL('../data/airports.json', import.meta.url), 'utf8'));
+    check('catalogue : milliers d’aéroports', catalog.rows.length > 5000, String(catalog.rows.length));
+    check('catalogue : pays nommés en français', catalog.countries.SN === 'Sénégal' && catalog.countries.FR === 'France');
+    check(
+      'catalogue : couverture mondiale',
+      new Set(catalog.rows.map((r) => r[3])).size > 150,
+      String(new Set(catalog.rows.map((r) => r[3])).size)
+    );
+    check(
+      'catalogue : champs exploitables',
+      catalog.rows.every((r) => typeof r[0] === 'string' && r[0].length === 3 && Number.isFinite(r[4]) && Number.isFinite(r[5]))
+    );
+
     const indexUrls = snapshotIndexCandidates();
     check(
       'snapshotIndexCandidates : liste des zones lisible même sans relevé',

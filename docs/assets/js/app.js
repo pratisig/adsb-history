@@ -14,10 +14,12 @@ import {
 import { queryDataset, aggregateByAircraft, buildTimeline, resultsToCsv, aircraftToCsv } from './query.js';
 import { MapView, colorFor } from './mapview.js';
 import { parseCsv, parseHeatmapBuffer, readTarStream } from './parse.js';
+import { parseWorld, filterByPoint, filterByBbox, countryBbox, searchAirports, airportLabel, rowsToDataset } from './world.js';
 import {
   fetchLive,
   fetchSnapshot,
   fetchSnapshotIndex,
+  fetchWorld,
   snapshotTraffic,
   RELAYS,
   RELAYS_PUBLIC,
@@ -1323,6 +1325,189 @@ async function buildSnapshotDataset() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Photo mondiale : tous les pays, tous les aéroports                          */
+/* -------------------------------------------------------------------------- */
+
+function worldState() {
+  if (!state.world) {
+    state.world = { data: null, pending: null, airports: null, countries: null, airportsPending: null, error: null };
+  }
+  return state.world;
+}
+
+function countryName(cc) {
+  const w = worldState();
+  return (w.countries && w.countries[cc]) || cc;
+}
+
+/** Photo mondiale publiée par le collecteur (`world.json`). */
+async function ensureWorld() {
+  const w = worldState();
+  if (w.data) return w.data;
+  if (!w.pending) {
+    w.pending = (async () => {
+      try {
+        const raw = await fetchWorld();
+        w.data = parseWorld(raw);
+        w.error = null;
+        updateWorldUi();
+        return w.data;
+      } catch (err) {
+        w.error = err.message;
+        updateWorldUi();
+        throw err;
+      } finally {
+        w.pending = null;
+      }
+    })();
+  }
+  return w.pending;
+}
+
+/** Catalogue des aéroports (7 900 codes IATA) + noms de pays, chargés une fois. */
+async function ensureAirports() {
+  const w = worldState();
+  if (w.airports) return w.airports;
+  if (!w.airportsPending) {
+    w.airportsPending = (async () => {
+      const response = await fetch('data/airports.json');
+      if (!response.ok) throw new Error(`catalogue d'aéroports : HTTP ${response.status}`);
+      const raw = await response.json();
+      const idx = Object.fromEntries((raw.fields || []).map((f, i) => [f, i]));
+      w.airports = raw.rows
+        .map((row) => ({
+          iata: String(row[idx.iata] || '').toUpperCase(),
+          name: row[idx.name] || '',
+          city: row[idx.city] || '',
+          cc: row[idx.cc] || '',
+          lat: row[idx.lat],
+          lon: row[idx.lon],
+        }))
+        .filter((a) => a.iata && Number.isFinite(a.lat) && Number.isFinite(a.lon));
+      w.countries = raw.countries || {};
+      fillWorldSelectors();
+      return w.airports;
+    })();
+  }
+  return w.airportsPending;
+}
+
+function fillWorldSelectors() {
+  const w = worldState();
+  const list = $('#world-airports');
+  if (list && w.airports && !list.childElementCount) {
+    const fragment = document.createDocumentFragment();
+    for (const airport of w.airports) {
+      const option = document.createElement('option');
+      option.value = airport.iata;
+      option.label = `${airport.name}${airport.city ? ` — ${airport.city}` : ''}`;
+      fragment.appendChild(option);
+    }
+    list.appendChild(fragment);
+  }
+  const select = $('#world-country');
+  if (select && w.airports && select.options.length <= 1) {
+    const codes = [...new Set(w.airports.map((a) => a.cc).filter(Boolean))];
+    codes
+      .map((cc) => ({ cc, name: countryName(cc) }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'fr'))
+      .forEach(({ cc, name }) => {
+        const option = document.createElement('option');
+        option.value = cc;
+        option.textContent = name;
+        select.appendChild(option);
+      });
+  }
+}
+
+function updateWorldUi() {
+  const w = worldState();
+  const status = $('#world-status');
+  if (!status) return;
+  const buttons = ['#world-all', '#world-airport-go', '#world-country-go'].map((sel) => $(sel));
+  if (w.error) {
+    status.style.color = 'var(--danger)';
+    status.textContent =
+      `Photo mondiale indisponible (${w.error}). Le relevé de zone ci-dessous reste utilisable.`;
+    return;
+  }
+  status.style.color = '';
+  if (!w.data) {
+    status.textContent = 'Chargement de la photo mondiale…';
+    return;
+  }
+  const lag = humanMinutes(Math.max(0, Date.now() / 1000 - (w.data.at || 0)));
+  status.textContent =
+    `${nf.format(w.data.aircraft)} aéronefs dans le monde · photo de ${formatTime(w.data.at)} UTC ` +
+    `(il y a ${lag}). Tous les pays, tous les aéroports.`;
+  buttons.forEach((b) => b && (b.disabled = false));
+}
+
+/** Ouvre une vue mondiale : tout, un aéroport (rayon), ou un pays. */
+async function openWorld({ mode }) {
+  setLoading(true, 'Construction de la vue mondiale…');
+  try {
+    const world = await ensureWorld();
+    let rows = world.rows;
+    let name = `Monde · ${nf.format(world.aircraft)} aéronefs · ${formatTime(world.at)} UTC`;
+
+    if (mode === 'airport') {
+      const airports = await ensureAirports();
+      const query = ($('#world-airport').value || '').trim();
+      if (!query) {
+        toast("Indiquez un aéroport : code IATA (DKR), nom ou ville.", 'error');
+        return;
+      }
+      const [match] = searchAirports(airports, query, 1);
+      if (!match) {
+        toast(`Aucun aéroport trouvé pour « ${query} » : essayez un code IATA ou une grande ville.`, 'error');
+        return;
+      }
+      $('#world-airport').value = match.iata;
+      const radius = Number($('#world-radius').value) || 50;
+      rows = filterByPoint(world, match.lat, match.lon, radius);
+      name = `Monde · ${match.iata} ±${radius} NM · ${formatTime(world.at)} UTC`;
+      if (!rows.length) {
+        toast(
+          `Aucun aéronef à ${radius} NM de ${airportLabel(match)} sur cette photo : ` +
+            "élargissez le rayon ou rechargez plus tard.",
+          'error'
+        );
+        return;
+      }
+    } else if (mode === 'country') {
+      const cc = $('#world-country').value;
+      if (!cc) {
+        toast("Choisissez d'abord un pays dans la liste.", 'error');
+        return;
+      }
+      const airports = await ensureAirports();
+      const bbox = countryBbox(airports, cc);
+      rows = filterByBbox(world, bbox);
+      name = `Monde · ${countryName(cc)} · ${formatTime(world.at)} UTC`;
+      if (!rows.length) {
+        toast(`Aucun aéronef au-dessus de ${countryName(cc)} sur cette photo.`, 'error');
+        return;
+      }
+    }
+
+    if (!rows.length) {
+      toast('Photo mondiale vide : réessayez après le prochain relevé.', 'error');
+      return;
+    }
+    const stats = await openRowsDataset(rowsToDataset(rows), { name, source: 'live' });
+    toast(
+      `Vue mondiale ouverte : ${nf.format(stats.count)} positions, ${nf.format(stats.aircraft)} aéronefs ` +
+        `(${name}).`
+    );
+  } catch (err) {
+    toast(`Photo mondiale indisponible : ${err.message}`, 'error');
+  } finally {
+    setLoading(false);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* N'importe quel point du globe : direct ici + ajout d'une zone au relevé     */
 /* -------------------------------------------------------------------------- */
 
@@ -1848,6 +2033,15 @@ function bindEvents() {
 
   $('#snapshot-zone').onchange = () => loadSnapshot($('#snapshot-zone').value);
 
+  // Photo mondiale : tous les pays, tous les aéroports
+  $('#world-all').onclick = () => openWorld({ mode: 'all' });
+  $('#world-airport-go').onclick = () => openWorld({ mode: 'airport' });
+  $('#world-country-go').onclick = () => openWorld({ mode: 'country' });
+  $('#world-airport').onchange = () => {
+    const value = $('#world-airport').value.trim().toUpperCase();
+    if (value.length === 3) $('#world-airport').value = value;
+  };
+
   // Sélecteur universel : n'importe quel point du globe
   $('#zone-pick').onclick = () =>
     armZonePick($('#zone-pick').getAttribute('aria-pressed') !== 'true');
@@ -2065,6 +2259,12 @@ async function init() {
   } catch (err) {
     console.warn('Relevé automatique indisponible :', err);
   }
+  // la photo mondiale se charge en arrière-plan (une requête, tous les pays)
+  setTimeout(() => {
+    ensureWorld().catch(() => {});
+    ensureAirports().catch(() => {});
+  }, opened ? 1200 : 0);
+
   if (opened) return;
 
   // 2. à défaut, la démonstration simulée (chargée à la demande)

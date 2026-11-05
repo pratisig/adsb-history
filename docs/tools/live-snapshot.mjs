@@ -14,7 +14,11 @@
  *   node docs/tools/live-snapshot.mjs --seed                # reprend le relevé précédent (branche live)
  *
  * Options : --out <dir> (défaut data), --zones <fichier.json>, --poll-seconds <n>,
- *           --window-minutes <n>, --seed, --repo <owner/name>
+ *           --window-minutes <n>, --seed, --world, --repo <owner/name>
+ *
+ * `--world` ajoute une photo mondiale complète (une requête suffit : rayon
+ * 20 000 NM autour de 0,0) publiée dans `world.json` : tous les pays, tous les
+ * aéroports, sans déclarer de zone.
  */
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
@@ -28,6 +32,19 @@ const PROVIDER_ORDER = ['adsblol', 'adsbfi', 'opensky', 'airplaneslive'];
 export const SAMPLE_FIELDS = [
   't', 'hex', 'flight', 'reg', 'type', 'category', 'military',
   'lat', 'lon', 'alt', 'gs', 'track', 'squawk',
+];
+
+/** Champs publiés pour la photo mondiale (plus compacte que les relevés de zone). */
+export const WORLD_FIELDS = ['t', 'hex', 'flight', 'reg', 'type', 'lat', 'lon', 'alt', 'gs', 'track'];
+
+/**
+ * Une seule requête suffit pour la planète : adsb.lol accepte un rayon de
+ * 20 000 NM autour du point (0, 0), c'est-à-dire tous ses aéronefs positionnés.
+ * Repli sur 10 000 NM si la réponse est tronquée ou refusée.
+ */
+const WORLD_URLS = [
+  'https://api.adsb.lol/v2/point/0/0/20000',
+  'https://api.adsb.lol/v2/point/0/0/10000',
 ];
 
 const DEFAULTS = {
@@ -119,6 +136,60 @@ function toRow(point, t) {
   ];
 }
 
+/** Photo mondiale : tous les aéronefs positionnés connus de l'agrégateur, en une requête. */
+export async function collectWorld({ log = console.log } = {}) {
+  const errors = [];
+  for (const url of WORLD_URLS) {
+    try {
+      const data = await fetchJson(url, 90000);
+      const points = parseAcList(data);
+      if (!points) {
+        errors.push(`${url} : réponse inattendue`);
+        continue;
+      }
+      const t = Math.floor(Date.now() / 1000);
+      const samples = [];
+      for (const point of points) {
+        if (!Number.isFinite(point.lat) || !Number.isFinite(point.lon)) continue;
+        samples.push([
+          t,
+          point.hex || '',
+          point.flight || '',
+          point.reg || '',
+          point.type || '',
+          R(point.lat, 4),
+          R(point.lon, 4),
+          typeof point.alt === 'number' ? Math.round(point.alt) : null,
+          R(point.gs, 1),
+          R(point.bearing, 1),
+        ]);
+      }
+      samples.sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+      log(`Monde : ${samples.length} aéronefs positionnés (${url}).`);
+      return { url, t, samples, errors };
+    } catch (err) {
+      errors.push(`${url} : ${err && err.message ? err.message : 'échec'}`);
+    }
+  }
+  log(`Monde : échec (${errors.join(' · ')})`);
+  return { url: null, t: Math.floor(Date.now() / 1000), samples: [], errors };
+}
+
+async function writeWorld(outDir, world) {
+  const payload = {
+    updated: new Date(world.t * 1000).toISOString(),
+    source: world.url ? 'adsb.lol' : null,
+    total: world.samples.length,
+    aircraft: new Set(world.samples.map((row) => row[1])).size,
+    fields: WORLD_FIELDS,
+    errors: world.errors.slice(-4),
+    samples: world.samples,
+  };
+  const file = path.join(outDir, 'world.json');
+  await writeFile(file, JSON.stringify(payload));
+  return payload;
+}
+
 async function loadZones(file) {
   if (!file) return [DEFAULTS.zone];
   try {
@@ -197,6 +268,7 @@ export async function collect({
   maxRows = DEFAULTS.maxRows,
   loopMinutes = 0,
   seed = false,
+  world = false,
   repo = DEFAULTS.repo,
   log = console.log,
 } = {}) {
@@ -244,6 +316,18 @@ export async function collect({
     }
   }
 
+  let worldPayload = null;
+  if (world) {
+    const sweep = await collectWorld({ log });
+    if (sweep.samples.length) {
+      worldPayload = await writeWorld(out, sweep);
+      log(`world : ${worldPayload.total} aéronefs, ${worldPayload.aircraft} hex publiés.`);
+    } else {
+      // jamais écraser une photo valide par un échec réseau
+      log('world : balayage vide — la photo précédente est conservée.');
+    }
+  }
+
   const written = [];
   for (const zone of zones) {
     const samples = pruneAndTidy(buffers.get(zone.id), { windowMinutes, maxRows });
@@ -273,8 +357,15 @@ export async function collect({
       aircraft: w.aircraft,
     })),
   };
+  if (worldPayload) {
+    index.world = {
+      updated: worldPayload.updated,
+      total: worldPayload.total,
+      aircraft: worldPayload.aircraft,
+    };
+  }
   await writeFile(path.join(out, 'index.json'), JSON.stringify(index, null, 2));
-  return { zones: written, index };
+  return { zones: written, index, world: worldPayload };
 }
 
 const invokedDirectly = process.argv[1] && process.argv[1].endsWith('live-snapshot.mjs');
@@ -288,6 +379,7 @@ if (invokedDirectly) {
     maxRows: Number(args['max-rows'] || DEFAULTS.maxRows),
     loopMinutes: Number(args['loop-minutes'] || 0),
     seed: Boolean(args.seed),
+    world: Boolean(args.world),
     repo: typeof args.repo === 'string' ? args.repo : process.env.GITHUB_REPOSITORY || DEFAULTS.repo,
   }).catch((err) => {
     console.error(`Relevé impossible : ${err && err.stack ? err.stack : err}`);
