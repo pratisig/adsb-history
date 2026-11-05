@@ -43,8 +43,9 @@ export const WORLD_FIELDS = ['t', 'hex', 'flight', 'reg', 'type', 'lat', 'lon', 
  * Repli sur 10 000 NM si la réponse est tronquée ou refusée.
  */
 const WORLD_URLS = [
-  'https://api.adsb.lol/v2/point/0/0/20000',
-  'https://api.adsb.lol/v2/point/0/0/10000',
+  { url: 'https://api.adsb.lol/v2/point/0/0/20000', timeoutMs: 180000 },
+  { url: 'https://api.adsb.lol/v2/point/0/0/10000', timeoutMs: 180000 },
+  { url: 'https://api.adsb.lol/v2/point/0/0/5000', timeoutMs: 120000 },
 ];
 
 const DEFAULTS = {
@@ -139,9 +140,9 @@ function toRow(point, t) {
 /** Photo mondiale : tous les aéronefs positionnés connus de l'agrégateur, en une requête. */
 export async function collectWorld({ log = console.log } = {}) {
   const errors = [];
-  for (const url of WORLD_URLS) {
+  for (const { url, timeoutMs } of WORLD_URLS) {
     try {
-      const data = await fetchJson(url, 90000);
+      const data = await fetchJson(url, timeoutMs);
       const points = parseAcList(data);
       if (!points) {
         errors.push(`${url} : réponse inattendue`);
@@ -173,6 +174,14 @@ export async function collectWorld({ log = console.log } = {}) {
   }
   log(`Monde : échec (${errors.join(' · ')})`);
   return { url: null, t: Math.floor(Date.now() / 1000), samples: [], errors };
+}
+
+/** Petit fichier de diagnostic : lisible même quand le balayage échoue. */
+async function writeWorldStatus(outDir, status) {
+  await writeFile(path.join(outDir, 'world-status.json'), JSON.stringify({
+    updated: new Date().toISOString(),
+    ...status,
+  }, null, 2));
 }
 
 async function writeWorld(outDir, world) {
@@ -326,6 +335,12 @@ export async function collect({
       // jamais écraser une photo valide par un échec réseau
       log('world : balayage vide — la photo précédente est conservée.');
     }
+    await writeWorldStatus(out, {
+      ok: sweep.samples.length > 0,
+      url: sweep.url,
+      total: sweep.samples.length,
+      errors: sweep.errors.slice(-4),
+    });
   }
 
   const written = [];
