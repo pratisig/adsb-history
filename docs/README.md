@@ -112,6 +112,28 @@ Coût à connaître : chaque zone déclarée est interrogée **toutes les 30 sec
 tiennent sans problème dans les quotas des API publiques ; en déclarer des dizaines demanderait
 d'espacer les relèves (`--poll-seconds` plus grand, ou plusieurs workflows).
 
+### a ter) Le monde entier : tous les pays, tous les aéroports
+
+Le relevé de zone ne sert qu'à **l'historique** d'un point précis. Pour la couverture
+planétaire, le collecteur publie aussi une **photo mondiale** (`--world`, fichier `world.json`) :
+
+- **une seule requête** suffit — `adsb.lol` accepte un rayon de 20 000 NM autour du point (0, 0),
+  ce qui renvoie **tous les aéronefs positionnés de la planète** (≈ 10 000 à 20 000) ;
+- le site charge cette photo en arrière-plan (**≈ 1,5 Mo**) et affiche
+  « *N aéronefs dans le monde · photo de HH:MM UTC* » ;
+- **carte 5 → « Le monde entier »** : trois vues, filtrées dans votre navigateur —
+  **Tout le monde**, **Autour de cet aéroport** (7 900 codes IATA du catalogue
+  `docs/data/airports.json`, rayon 25 à 250 NM) et **Ce pays** (250 pays, boîte englobante
+  calculée à partir de leurs aéroports).
+
+Chaque vue devient un jeu de données normal : carte, timeline, tableau, agrégation par
+aéronef, export CSV. Aucune zone à déclarer, aucun pays à choisir à l'avance.
+
+Limites, dites franchement : une photo mondiale est une **image à un instant donné**
+(rafraîchie à chaque passage du workflow, ex. toutes les 8 minutes pendant une exécution).
+Elle ne contient pas de traînée historique ; pour cela, laissez la page ouverte et cochez
+*« Enregistrer pour l'historique »*, déclarez une zone (§ a bis) ou importez une archive (§ 3).
+
 ### b) Le direct depuis le navigateur (facultatif)
 
 **Aucune** API ADS-B publique n'envoie d'en-tête `Access-Control-Allow-Origin` : `api.adsb.lol`,

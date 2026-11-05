@@ -467,6 +467,56 @@ export async function fetchSnapshot({
   throw new Error(`Relevé automatique indisponible — ${problems.join(' · ')}`);
 }
 
+/** URLs de la photo mondiale (tous les aéronefs positionnés). */
+export function worldCandidates({ repo = SNAPSHOT_REPO, branch = SNAPSHOT_BRANCH } = {}) {
+  return [
+    `https://raw.githubusercontent.com/${repo}/${branch}/data/world.json`,
+    `https://cdn.jsdelivr.net/gh/${repo}@${branch}/data/world.json`,
+    'data/world.json',
+  ];
+}
+
+/**
+ * Récupère la photo mondiale publiée par le collecteur (`--world`).
+ * Le filtrage (aéroport, pays) est fait ensuite par `world.js`.
+ */
+export async function fetchWorld({
+  fetchImpl = typeof fetch === 'function' ? fetch : null,
+  timeoutMs = 25000,
+  urls = null,
+  repo = SNAPSHOT_REPO,
+  branch = SNAPSHOT_BRANCH,
+} = {}) {
+  if (!fetchImpl) throw new Error('Ce navigateur ne permet pas les requêtes réseau.');
+  const problems = [];
+  for (const candidate of urls || worldCandidates({ repo, branch })) {
+    const url = candidate.startsWith('http')
+      ? `${candidate}${candidate.includes('?') ? '&' : '?'}t=${Math.floor(Date.now() / 1000)}`
+      : candidate;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetchImpl(url, { signal: controller.signal, mode: 'cors' });
+      if (!response.ok) {
+        problems.push(`${url} : HTTP ${response.status}`);
+        continue;
+      }
+      const raw = await response.json();
+      if (!raw || !Array.isArray(raw.samples)) {
+        problems.push(`${url} : contenu inattendu`);
+        continue;
+      }
+      raw.url = url;
+      return raw;
+    } catch (err) {
+      problems.push(`${url} : ${describeFetchError(err, null)}`);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw new Error(`Photo mondiale indisponible — ${problems.join(' · ')}`);
+}
+
 /** Liste des zones disponibles dans le relevé automatique. */
 export async function fetchSnapshotIndex({
   fetchImpl = typeof fetch === 'function' ? fetch : null,

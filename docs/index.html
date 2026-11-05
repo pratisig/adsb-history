@@ -151,9 +151,52 @@
           <h2><span class="step">5</span> Données réelles</h2>
           <p class="hint">
             Trafic réel collecté automatiquement par le dépôt et publié en JSON :
-            rien à télécharger, aucune clé, aucun compte. Ouvre tout seul au chargement,
-            pour la zone choisie ci-dessous — n'importe où dans le monde.
+            rien à télécharger, aucune clé, aucun compte. Le site couvre <strong>le monde
+            entier</strong> (tous les pays, tous les aéroports) et ouvre le relevé de votre zone
+            tout seul au chargement.
           </p>
+
+          <div class="snapshot-box world-box">
+            <div class="snapshot-title">Le monde entier — tous les pays, tous les aéroports</div>
+            <p class="hint" id="world-status">Chargement de la photo mondiale…</p>
+            <p class="hint">
+              Une photo de <strong>tous les aéronefs positionnés sur Terre</strong> est publiée par
+              le dépôt à chaque passage (une seule requête, sans déclarer de zone). Choisissez
+              ensuite ce qui vous intéresse : le filtrage se fait dans votre navigateur.
+            </p>
+            <div class="field-pair">
+              <label class="field">
+                <span>Aéroport (code IATA, nom ou ville)</span>
+                <input id="world-airport" list="world-airports" placeholder="DKR, Casablanca, Tokyo…" autocomplete="off" />
+                <datalist id="world-airports"></datalist>
+              </label>
+              <label class="field">
+                <span>Pays</span>
+                <select id="world-country">
+                  <option value="">— choisir —</option>
+                </select>
+              </label>
+            </div>
+            <div class="field-pair">
+              <label class="field">
+                <span>Rayon autour de l'aéroport</span>
+                <select id="world-radius">
+                  <option value="25">25 NM</option>
+                  <option value="50" selected>50 NM</option>
+                  <option value="100">100 NM</option>
+                  <option value="250">250 NM</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>&nbsp;</span>
+                <button id="world-all" class="btn small wide">Tout le monde</button>
+              </label>
+            </div>
+            <div class="row wrap">
+              <button id="world-airport-go" class="btn small">Autour de cet aéroport</button>
+              <button id="world-country-go" class="btn small ghost">Ce pays</button>
+            </div>
+          </div>
 
           <div class="snapshot-box">
             <div class="snapshot-title">Relevé automatique</div>

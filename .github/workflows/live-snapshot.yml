@@ -57,6 +57,6 @@ jobs:
           }
           for i in $(seq 1 "${PASSES}"); do
             echo "=== Passe ${i}/${PASSES} ==="
-            node docs/tools/live-snapshot.mjs --out=data --seed --loop-minutes=8 --poll-seconds=30
+            node docs/tools/live-snapshot.mjs --out=data --seed --world --loop-minutes=8 --poll-seconds=30
             publish
           done
