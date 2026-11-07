@@ -1,0 +1,1 @@
+{"zone":{"id":"ziguinchor","label":"Ziguinchor (Sénégal)","lat":12.56,"lon":-16.27,"radius":100},"updated":"2026-11-07T14:02:11.155Z","provider":"adsb.lol","providerId":"adsblol","windowMinutes":180,"fields":["t","hex","flight","reg","type","category","military","lat","lon","alt","gs","track","squawk"],"first":null,"last":null,"rows":0,"aircraft":0,"errors":[],"samples":[]}
