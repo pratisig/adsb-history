@@ -57,6 +57,10 @@ jobs:
           }
           for i in $(seq 1 "${PASSES}"); do
             echo "=== Passe ${i}/${PASSES} ==="
-            node docs/tools/live-snapshot.mjs --out=data --seed --world --loop-minutes=8 --poll-seconds=30
+            # la photo mondiale n'est demandée qu'à la première passe : ces API
+            # répondent 429 quand on insiste, et une requête planétaire pèse lourd
+            WORLD=""
+            if [ "${i}" = "1" ]; then WORLD="--world"; fi
+            node docs/tools/live-snapshot.mjs --out=data --seed ${WORLD} --loop-minutes=8 --poll-seconds=45
             publish
           done

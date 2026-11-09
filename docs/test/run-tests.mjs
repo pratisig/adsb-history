@@ -596,6 +596,56 @@ async function main() {
     check('collecte : relevé relisible par le site', parseSnapshot(written) !== null);
   }
 
+  // --- photo mondiale : balayage réussi, puis échec 429 qui ne doit rien effacer ---
+  {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'turnstone-world-'));
+    const prevFetch = globalThis.fetch;
+    const worldAc = {
+      ac: [
+        { hex: 'aaaaaa', flight: 'AFR001', lat: 48.9, lon: 2.4, alt_baro: 30000, gs: 450, track: 90 },
+        { hex: 'bbbbbb', flight: 'RAM200', lat: 33.6, lon: -7.6, alt_baro: 35000, gs: 470, track: 200 },
+      ],
+    };
+    globalThis.fetch = async (url) => {
+      const u = String(url);
+      if (u.includes('raw.githubusercontent.com')) return { ok: false, status: 404, json: async () => ({}) };
+      if (u.includes('/v2/point/0/0/')) return { ok: true, json: async () => worldAc };
+      return { ok: true, json: async () => ({ ac: [] }) };
+    };
+    let first;
+    try {
+      first = await collectSnapshot({ out: dir, zonesFile: null, pollSeconds: 0, loopMinutes: 0, world: true, worldSleep: async () => {} });
+    } finally {
+      globalThis.fetch = prevFetch;
+    }
+    const worldFile = JSON.parse(await readFile(path.join(dir, 'world.json'), 'utf8'));
+    check('monde : photo publiée', worldFile.samples.length === 2 && worldFile.aircraft === 2, String(worldFile.samples.length));
+    check('monde : index renseigné', first.index.world && first.index.world.aircraft === 2);
+    check('monde : champs attendus', worldFile.fields.join(',') === 't,hex,flight,reg,type,lat,lon,alt,gs,track');
+
+    // 429 partout : la photo précédente doit survivre, fichier compris
+    globalThis.fetch = async (url) => {
+      const u = String(url);
+      if (u.includes('/v2/point/0/0/') || u.includes('opensky-network.org')) {
+        return { ok: false, status: 429, json: async () => ({}) };
+      }
+      if (u.includes('raw.githubusercontent.com')) return { ok: false, status: 404, json: async () => ({}) };
+      return { ok: true, json: async () => ({ ac: [] }) };
+    };
+    let second;
+    try {
+      second = await collectSnapshot({ out: dir, zonesFile: null, pollSeconds: 0, loopMinutes: 0, world: true, worldSleep: async () => {} });
+    } finally {
+      globalThis.fetch = prevFetch;
+    }
+    const kept = JSON.parse(await readFile(path.join(dir, 'world.json'), 'utf8'));
+    check('monde 429 : photo précédente conservée', kept.samples.length === 2, String(kept.samples.length));
+    check('monde 429 : index pointe sur la photo conservée', Boolean(second.index.world));
+    const status429 = JSON.parse(await readFile(path.join(dir, 'world-status.json'), 'utf8'));
+    check('monde 429 : statut publié', status429.ok === true && status429.total === 0, JSON.stringify(status429));
+    check('monde 429 : erreurs lisibles', status429.errors.some((e) => /429/.test(e)), status429.errors.join(' · '));
+  }
+
   console.log(failures ? `\n${failures} test(s) en échec\n` : '\nTous les tests passent\n');
   process.exit(failures ? 1 : 0);
 }

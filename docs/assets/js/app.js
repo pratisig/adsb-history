@@ -1353,7 +1353,8 @@ async function ensureWorld() {
         updateWorldUi();
         return w.data;
       } catch (err) {
-        w.error = err.message;
+        // message déjà préfixé par live.js : on ne garde que la raison
+        w.error = String(err.message || err).replace(/^Photo mondiale indisponible\s*—\s*/, '');
         updateWorldUi();
         throw err;
       } finally {
@@ -1428,7 +1429,8 @@ function updateWorldUi() {
   if (w.error) {
     status.style.color = 'var(--danger)';
     status.textContent =
-      `Photo mondiale indisponible (${w.error}). Le relevé de zone ci-dessous reste utilisable.`;
+      `Photo mondiale indisponible pour le moment (${w.error}). Le relevé de zone ci-dessous ` +
+      'reste utilisable ; la photo revient dès qu’un balayage aboutit.';
     return;
   }
   status.style.color = '';
@@ -1501,7 +1503,7 @@ async function openWorld({ mode }) {
         `(${name}).`
     );
   } catch (err) {
-    toast(`Photo mondiale indisponible : ${err.message}`, 'error');
+    toast(`Photo mondiale indisponible : ${worldState().error || err.message}`, 'error');
   } finally {
     setLoading(false);
   }
