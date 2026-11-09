@@ -43,9 +43,10 @@ export const WORLD_FIELDS = ['t', 'hex', 'flight', 'reg', 'type', 'lat', 'lon', 
  * Repli sur 10 000 NM si la réponse est tronquée ou refusée.
  */
 const WORLD_URLS = [
-  { url: 'https://api.adsb.lol/v2/point/0/0/20000', timeoutMs: 180000 },
-  { url: 'https://api.adsb.lol/v2/point/0/0/10000', timeoutMs: 180000 },
-  { url: 'https://api.adsb.lol/v2/point/0/0/5000', timeoutMs: 120000 },
+  { url: 'https://api.adsb.lol/v2/point/0/0/20000', timeoutMs: 180000, parse: 'adsb' },
+  // repli : OpenSky renvoie aussi le monde entier en une requête (sans bbox)
+  { url: 'https://opensky-network.org/api/states/all', timeoutMs: 180000, parse: 'opensky' },
+  { url: 'https://api.adsb.lol/v2/point/0/0/10000', timeoutMs: 180000, parse: 'adsb' },
 ];
 
 const DEFAULTS = {
@@ -138,38 +139,46 @@ function toRow(point, t) {
 }
 
 /** Photo mondiale : tous les aéronefs positionnés connus de l'agrégateur, en une requête. */
-export async function collectWorld({ log = console.log } = {}) {
+export async function collectWorld({
+  log = console.log,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+} = {}) {
   const errors = [];
-  for (const { url, timeoutMs } of WORLD_URLS) {
-    try {
-      const data = await fetchJson(url, timeoutMs);
-      const points = parseAcList(data);
-      if (!points) {
-        errors.push(`${url} : réponse inattendue`);
-        continue;
+  for (const { url, timeoutMs, parse } of WORLD_URLS) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const data = await fetchJson(url, timeoutMs);
+        const points = parse === 'opensky' ? parseOpenSky(data) : parseAcList(data);
+        if (!points) {
+          errors.push(`${url} : réponse inattendue`);
+          break;
+        }
+        const t = Math.floor(Date.now() / 1000);
+        const samples = [];
+        for (const point of points) {
+          if (!Number.isFinite(point.lat) || !Number.isFinite(point.lon)) continue;
+          samples.push([
+            t,
+            point.hex || '',
+            point.flight || '',
+            point.reg || '',
+            point.type || '',
+            R(point.lat, 4),
+            R(point.lon, 4),
+            typeof point.alt === 'number' ? Math.round(point.alt) : null,
+            R(point.gs, 1),
+            R(point.bearing, 1),
+          ]);
+        }
+        samples.sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+        log(`Monde : ${samples.length} aéronefs positionnés (${url}).`);
+        return { url, t, samples, errors };
+      } catch (err) {
+        const message = err && err.message ? err.message : 'échec';
+        errors.push(`${url} : ${message}${attempt > 1 ? ' (2e essai)' : ''}`);
+        // 429 : on laisse passer un peu avant de réessayer / de changer de source
+        if (/429/.test(message)) await sleep(attempt === 1 ? 20000 : 5000);
       }
-      const t = Math.floor(Date.now() / 1000);
-      const samples = [];
-      for (const point of points) {
-        if (!Number.isFinite(point.lat) || !Number.isFinite(point.lon)) continue;
-        samples.push([
-          t,
-          point.hex || '',
-          point.flight || '',
-          point.reg || '',
-          point.type || '',
-          R(point.lat, 4),
-          R(point.lon, 4),
-          typeof point.alt === 'number' ? Math.round(point.alt) : null,
-          R(point.gs, 1),
-          R(point.bearing, 1),
-        ]);
-      }
-      samples.sort((a, b) => String(a[1]).localeCompare(String(b[1])));
-      log(`Monde : ${samples.length} aéronefs positionnés (${url}).`);
-      return { url, t, samples, errors };
-    } catch (err) {
-      errors.push(`${url} : ${err && err.message ? err.message : 'échec'}`);
     }
   }
   log(`Monde : échec (${errors.join(' · ')})`);
@@ -182,6 +191,29 @@ async function writeWorldStatus(outDir, status) {
     updated: new Date().toISOString(),
     ...status,
   }, null, 2));
+}
+
+/**
+ * Photo publiée lors d'un passage précédent : jamais supprimée par un balayage
+ * raté (les API répondent 429 quand elles sont saturées), sinon le site perd la
+ * couverture mondiale du jour au lendemain.
+ */
+async function previousWorld(outDir, { repo }) {
+  const candidates = [
+    path.join(outDir, 'world.json'),
+    `https://raw.githubusercontent.com/${repo}/live/data/world.json`,
+  ];
+  for (const ref of candidates) {
+    try {
+      const raw = ref.startsWith('http')
+        ? await fetchJson(ref, 60000)
+        : JSON.parse(await readFile(ref, 'utf8'));
+      if (raw && Array.isArray(raw.samples) && raw.samples.length) return raw;
+    } catch {
+      /* rien à reprendre */
+    }
+  }
+  return null;
 }
 
 async function writeWorld(outDir, world) {
@@ -278,6 +310,7 @@ export async function collect({
   loopMinutes = 0,
   seed = false,
   world = false,
+  worldSleep = null,
   repo = DEFAULTS.repo,
   log = console.log,
 } = {}) {
@@ -327,18 +360,30 @@ export async function collect({
 
   let worldPayload = null;
   if (world) {
-    const sweep = await collectWorld({ log });
+    const sweep = await collectWorld({ log, sleep: worldSleep || undefined });
     if (sweep.samples.length) {
       worldPayload = await writeWorld(out, sweep);
       log(`world : ${worldPayload.total} aéronefs, ${worldPayload.aircraft} hex publiés.`);
     } else {
-      // jamais écraser une photo valide par un échec réseau
-      log('world : balayage vide — la photo précédente est conservée.');
+      // jamais écraser (ni faire disparaître) une photo valide à cause d'un 429
+      const previous = await previousWorld(out, { repo });
+      if (previous) {
+        await writeFile(path.join(out, 'world.json'), JSON.stringify(previous));
+        worldPayload = previous;
+        log(
+          `world : balayage vide — photo précédente conservée (${previous.aircraft || 0} aéronefs, ` +
+            `${previous.updated || 'date inconnue'}).`
+        );
+      } else {
+        log('world : balayage vide et aucune photo précédente disponible.');
+      }
     }
     await writeWorldStatus(out, {
-      ok: sweep.samples.length > 0,
+      ok: Boolean(worldPayload && worldPayload.samples && worldPayload.samples.length),
       url: sweep.url,
       total: sweep.samples.length,
+      served: worldPayload ? worldPayload.total || 0 : 0,
+      servedUpdated: worldPayload ? worldPayload.updated || null : null,
       errors: sweep.errors.slice(-4),
     });
   }

@@ -129,6 +129,11 @@ planétaire, le collecteur publie aussi une **photo mondiale** (`--world`, fichi
 Chaque vue devient un jeu de données normal : carte, timeline, tableau, agrégation par
 aéronef, export CSV. Aucune zone à déclarer, aucun pays à choisir à l'avance.
 
+Si `adsb.lol` répond **429** (trop de requêtes — ces API sont partagées), le collecteur réessaie,
+puis bascule sur **OpenSky** (`states/all` sans bbox, également mondial), et enfin sur un rayon
+réduit. Un balayage raté **n'efface jamais** la photo précédente : elle est reprise sur la branche
+`live` et republiée, et `data/world-status.json` indique la dernière erreur.
+
 Limites, dites franchement : une photo mondiale est une **image à un instant donné**
 (rafraîchie à chaque passage du workflow, ex. toutes les 8 minutes pendant une exécution).
 Elle ne contient pas de traînée historique ; pour cela, laissez la page ouverte et cochez
