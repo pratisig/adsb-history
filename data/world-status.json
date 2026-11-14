@@ -1,0 +1,12 @@
+{
+  "updated": "2026-11-14T15:05:22.112Z",
+  "ok": true,
+  "url": "https://opensky-network.org/api/states/all",
+  "total": 10263,
+  "served": 10263,
+  "servedUpdated": "2026-11-14T15:05:22.000Z",
+  "errors": [
+    "https://api.adsb.lol/v2/point/0/0/20000 : HTTP 403",
+    "https://api.adsb.lol/v2/point/0/0/20000 : HTTP 403 (2e essai)"
+  ]
+}
