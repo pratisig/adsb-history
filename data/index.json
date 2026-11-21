@@ -1,0 +1,76 @@
+{
+  "generated": "2026-11-21T15:32:03.495Z",
+  "repo": "pratisig/adsb-history",
+  "zones": [
+    {
+      "id": "dakar",
+      "label": "Dakar",
+      "lat": 14.74,
+      "lon": -17.49,
+      "radius": 150,
+      "provider": "adsb.lol",
+      "updated": "2026-11-21T15:32:03.488Z",
+      "first": "2026-11-21T15:24:29.000Z",
+      "last": "2026-11-21T15:32:00.000Z",
+      "rows": 58,
+      "aircraft": 6
+    },
+    {
+      "id": "saint-louis",
+      "label": "Saint-Louis (Sénégal)",
+      "lat": 16.03,
+      "lon": -16.5,
+      "radius": 100,
+      "provider": "adsb.lol",
+      "updated": "2026-11-21T15:32:03.489Z",
+      "first": "2026-11-21T15:24:29.000Z",
+      "last": "2026-11-21T15:32:00.000Z",
+      "rows": 27,
+      "aircraft": 5
+    },
+    {
+      "id": "ziguinchor",
+      "label": "Ziguinchor (Sénégal)",
+      "lat": 12.56,
+      "lon": -16.27,
+      "radius": 100,
+      "provider": "adsb.lol",
+      "updated": "2026-11-21T15:32:03.489Z",
+      "first": "2026-11-21T15:24:29.000Z",
+      "last": "2026-11-21T15:32:00.000Z",
+      "rows": 22,
+      "aircraft": 2
+    },
+    {
+      "id": "paris",
+      "label": "Paris",
+      "lat": 48.86,
+      "lon": 2.35,
+      "radius": 150,
+      "provider": "adsb.lol",
+      "updated": "2026-11-21T15:32:03.491Z",
+      "first": "2026-11-21T15:24:29.000Z",
+      "last": "2026-11-21T15:32:00.000Z",
+      "rows": 1975,
+      "aircraft": 227
+    },
+    {
+      "id": "montreal",
+      "label": "Montréal",
+      "lat": 45.47,
+      "lon": -73.74,
+      "radius": 150,
+      "provider": "adsb.lol",
+      "updated": "2026-11-21T15:32:03.494Z",
+      "first": "2026-11-21T15:24:29.000Z",
+      "last": "2026-11-21T15:32:00.000Z",
+      "rows": 699,
+      "aircraft": 85
+    }
+  ],
+  "world": {
+    "updated": "2026-11-21T15:32:03.000Z",
+    "total": 11554,
+    "aircraft": 11554
+  }
+}
